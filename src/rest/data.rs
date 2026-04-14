@@ -160,6 +160,7 @@ impl<'a> DataApiV2<'a> {
 #[allow(unused)]
 impl<'a> DataApiV2<'a> {
     /// Get kline data by token address
+    #[allow(clippy::too_many_arguments)]
     pub async fn kline_token(
         &self,
         chain: &str,
@@ -188,6 +189,7 @@ impl<'a> DataApiV2<'a> {
     }
 
     /// Get kline data by pair address
+    #[allow(clippy::too_many_arguments)]
     pub async fn kline_pair(
         &self,
         chain: &str,

@@ -74,6 +74,7 @@ impl AveClient {
         &self.config
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn get<T: DeserializeOwned>(
         &self,
         path: &str,
@@ -111,6 +112,7 @@ impl AveClient {
         Ok(data)
     }
 
+    #[allow(dead_code)]
     pub(crate) async fn post<B: Serialize, T: DeserializeOwned>(
         &self,
         path: &str,
