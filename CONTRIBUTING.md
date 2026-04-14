@@ -1,6 +1,6 @@
-# Contributing to ave-cloud-rs-skills
+# Contributing to ave-cloud-skills
 
-Thank you for your interest in contributing to ave-cloud-rs-skills.
+Thank you for your interest in contributing to ave-cloud-skills.
 
 ## Development Setup
 

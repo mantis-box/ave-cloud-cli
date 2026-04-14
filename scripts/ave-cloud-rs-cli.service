@@ -1,15 +1,15 @@
 [Unit]
 Description=AVE Cloud RS CLI Daemon
-Documentation=https://github.com/owner/ave-cloud-rs-cli
+Documentation=https://github.com/owner/ave-cloud-cli
 After=network.target
 
 [Service]
 Type=simple
 User=pi
-EnvironmentFile=/etc/ave-cloud-rs-cli/env
+EnvironmentFile=/etc/ave-cloud-cli/env
 
 # Adjust path as needed
-ExecStart=/usr/local/bin/ave-cloud-rs-cli daemon --skill data-wss
+ExecStart=/usr/local/bin/ave-cloud-cli daemon --skill data-wss
 
 Restart=on-failure
 RestartSec=5
@@ -21,7 +21,7 @@ CPUQuota=20%
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=ave-cloud-rs-cli
+SyslogIdentifier=ave-cloud-cli
 
 # Security hardening
 NoNewPrivileges=true

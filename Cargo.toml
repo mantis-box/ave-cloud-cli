@@ -1,5 +1,5 @@
 [package]
-name = "ave-cloud-rs-cli"
+name = "ave-cloud-cli"
 version = "0.1.0"
 edition = "2021"
 

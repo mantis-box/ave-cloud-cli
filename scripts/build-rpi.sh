@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Cross-compile ave-cloud-rs-cli for Raspberry Pi
+# Cross-compile ave-cloud-cli for Raspberry Pi
 #
 # Usage: ./scripts/build-rpi.sh [aarch64|armv7]
 #
@@ -58,7 +58,7 @@ echo "Building..."
 cargo build --release --target "$TARGET" --features rustls
 
 # Report
-OUTPUT="target/$TARGET/release/ave-cloud-rs-cli"
+OUTPUT="target/$TARGET/release/ave-cloud-cli"
 if [ -f "$OUTPUT" ]; then
     SIZE=$(du -h "$OUTPUT" | cut -f1)
     echo ""

@@ -96,21 +96,21 @@ jobs:
       - name: Strip binary
         run: |
           case '${{ matrix.target }}' in
-            aarch64-*) aarch64-linux-gnu-strip target/${{ matrix.target }}/release/ave-cloud-rs-cli ;;
-            armv7-*) arm-linux-gnueabihf-strip target/${{ matrix.target }}/release/ave-cloud-rs-cli ;;
-            *) strip target/${{ matrix.target }}/release/ave-cloud-rs-cli ;;
+            aarch64-*) aarch64-linux-gnu-strip target/${{ matrix.target }}/release/ave-cloud-cli ;;
+            armv7-*) arm-linux-gnueabihf-strip target/${{ matrix.target }}/release/ave-cloud-cli ;;
+            *) strip target/${{ matrix.target }}/release/ave-cloud-cli ;;
           esac
 
       - name: Rename binary with architecture
         run: |
-          cp target/${{ matrix.target }}/release/ave-cloud-rs-cli \
-             target/${{ matrix.target }}/release/ave-cloud-rs-cli-${{ matrix.target }}
+          cp target/${{ matrix.target }}/release/ave-cloud-cli \
+             target/${{ matrix.target }}/release/ave-cloud-cli-${{ matrix.target }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ave-cloud-rs-cli-${{ matrix.target }}
-          path: target/${{ matrix.target }}/release/ave-cloud-rs-cli-${{ matrix.target }}
+          name: ave-cloud-cli-${{ matrix.target }}
+          path: target/${{ matrix.target }}/release/ave-cloud-cli-${{ matrix.target }}
           retention-days: 5
 
   # ==========================================================================
@@ -137,7 +137,7 @@ jobs:
       - name: Generate checksums
         run: |
           cd artifacts
-          find . -name 'ave-cloud-rs-cli-*' -type f -exec sha256sum {} \; > checksums.txt
+          find . -name 'ave-cloud-cli-*' -type f -exec sha256sum {} \; > checksums.txt
           cat checksums.txt
 
       - name: Get version
@@ -150,10 +150,10 @@ jobs:
         with:
           draft: true
           files: |
-            artifacts/ave-cloud-rs-cli-x86_64-unknown-linux-gnu/ave-cloud-rs-cli-x86_64-unknown-linux-gnu
-            artifacts/ave-cloud-rs-cli-aarch64-unknown-linux-gnu/ave-cloud-rs-cli-aarch64-unknown-linux-gnu
-            artifacts/ave-cloud-rs-cli-armv7-unknown-linux-gnueabihf/ave-cloud-rs-cli-armv7-unknown-linux-gnueabihf
-            artifacts/ave-cloud-rs-cli-x86_64-unknown-linux-musl/ave-cloud-rs-cli-x86_64-unknown-linux-musl
+            artifacts/ave-cloud-cli-x86_64-unknown-linux-gnu/ave-cloud-cli-x86_64-unknown-linux-gnu
+            artifacts/ave-cloud-cli-aarch64-unknown-linux-gnu/ave-cloud-cli-aarch64-unknown-linux-gnu
+            artifacts/ave-cloud-cli-armv7-unknown-linux-gnueabihf/ave-cloud-cli-armv7-unknown-linux-gnueabihf
+            artifacts/ave-cloud-cli-x86_64-unknown-linux-musl/ave-cloud-cli-x86_64-unknown-linux-musl
             artifacts/checksums.txt
             scripts/install.sh
           generate_release_notes: true

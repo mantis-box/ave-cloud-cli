@@ -33,7 +33,7 @@ RUN if [ -d .cargo ]; then cp -r .cargo ./.cargo; fi
 # Build for multiple targets
 # Default: musl static binary (works on most Linux)
 RUN cargo build --release --target x86_64-unknown-linux-musl --features rustls && \
-    strip target/x86_64-unknown-linux-musl/release/ave-cloud-rs-cli
+    strip target/x86_64-unknown-linux-musl/release/ave-cloud-cli
 
 # =============================================================================
 # Stage 2: Runtime
@@ -47,34 +47,34 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user
-RUN useradd --create-home --shell /bin/bash ave-cloud-rs-cli
-WORKDIR /home/ave-cloud-rs-cli
+RUN useradd --create-home --shell /bin/bash ave-cloud-cli
+WORKDIR /home/ave-cloud-cli
 
 # Copy binary from builder
-COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/ave-cloud-rs-cli /usr/local/bin/
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/ave-cloud-cli /usr/local/bin/
 
 # Set permissions
-RUN chmod +x /usr/local/bin/ave-cloud-rs-cli && \
-    chown ave-cloud-rs-cli:ave-cloud-rs-cli /usr/local/bin/ave-cloud-rs-cli
+RUN chmod +x /usr/local/bin/ave-cloud-cli && \
+    chown ave-cloud-cli:ave-cloud-cli /usr/local/bin/ave-cloud-cli
 
 # Copy service file
-COPY scripts/ave-cloud-rs-cli.service /etc/systemd/system/
+COPY scripts/ave-cloud-cli.service /etc/systemd/system/
 
 # Create env file template
-RUN mkdir -p /etc/ave-cloud-rs-cli && \
-    echo '# AVE_API_KEY=your_api_key_here' > /etc/ave-cloud-rs-cli/env.template && \
-    echo '# API_PLAN=free' >> /etc/ave-cloud-rs-cli/env.template && \
-    chown -R ave-cloud-rs-cli:ave-cloud-rs-cli /etc/ave-cloud-rs-cli && \
-    chmod 600 /etc/ave-cloud-rs-cli/env.template
+RUN mkdir -p /etc/ave-cloud-cli && \
+    echo '# AVE_API_KEY=your_api_key_here' > /etc/ave-cloud-cli/env.template && \
+    echo '# API_PLAN=free' >> /etc/ave-cloud-cli/env.template && \
+    chown -R ave-cloud-cli:ave-cloud-cli /etc/ave-cloud-cli && \
+    chmod 600 /etc/ave-cloud-cli/env.template
 
 # Switch to non-root user
-USER ave-cloud-rs-cli
+USER ave-cloud-cli
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD /usr/local/bin/ave-cloud-rs-cli price BSC 0x0000000000000000000000000000000000000000 || true
+    CMD /usr/local/bin/ave-cloud-cli price BSC 0x0000000000000000000000000000000000000000 || true
 
 EXPOSE 8080
 
-ENTRYPOINT ["/usr/local/bin/ave-cloud-rs-cli"]
+ENTRYPOINT ["/usr/local/bin/ave-cloud-cli"]
 CMD ["daemon", "--skill", "data-wss"]

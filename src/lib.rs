@@ -1,4 +1,4 @@
-// ave-cloud-rs-skills library
+// ave-cloud-skills library
 // Full implementation in FASE 1-9
 
 pub mod config;

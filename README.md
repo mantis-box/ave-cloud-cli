@@ -1,4 +1,4 @@
-# ave-cloud-rs-cli
+# ave-cloud-cli
 
 Rust-based CLI for Ave Cloud API that replicates server-side functionality including REST API queries, WebSocket streams, and DEX trading.
 
@@ -14,7 +14,7 @@ Rust-based CLI for Ave Cloud API that replicates server-side functionality inclu
 ### Pre-built binaries
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/owner/ave-cloud-rs-cli/main/scripts/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/mantis-box/ave-cloud-cli/main/scripts/install.sh | sh
 ```
 
 ### Build from source
@@ -26,8 +26,8 @@ cargo build --release
 ### Docker
 
 ```bash
-docker pull ghcr.io/owner/ave-cloud-rs-cli:latest
-docker run -e AVE_API_KEY=your_key ghcr.io/owner/ave-cloud-rs-cli
+docker pull ghcr.io/owner/ave-cloud-cli:latest
+docker run -e AVE_API_KEY=your_key ghcr.io/owner/ave-cloud-cli
 ```
 
 ## Quick Start
@@ -38,16 +38,16 @@ export AVE_API_KEY=your_api_key
 export API_PLAN=free
 
 # Get token price
-ave-cloud-rs-cli price BSC 0x1234...
+ave-cloud-cli price BSC 0x1234...
 
 # Get token info
-ave-cloud-rs-cli info ETH 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
+ave-cloud-cli info ETH 0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2
 
 # Risk check
-ave-cloud-rs-cli risk BSC 0x1234...
+ave-cloud-cli risk BSC 0x1234...
 
 # Search tokens
-ave-cloud-rs-cli search "pepe" --chain BSC
+ave-cloud-cli search "pepe" --chain BSC
 ```
 
 ## Configuration
@@ -67,25 +67,25 @@ ave-cloud-rs-cli search "pepe" --chain BSC
 
 ### Data REST (Free+)
 ```
-ave-cloud-rs-cli price <chain> <address>     Token price
-ave-cloud-rs-cli info <chain> <address>      Full token info
-ave-cloud-rs-cli kline <chain> <address>     OHLCV data
-ave-cloud-rs-cli risk <chain> <address>       Risk/honeypot check
-ave-cloud-rs-cli search <query>             Token search
+ave-cloud-cli price <chain> <address>     Token price
+ave-cloud-cli info <chain> <address>      Full token info
+ave-cloud-cli kline <chain> <address>     OHLCV data
+ave-cloud-cli risk <chain> <address>       Risk/honeypot check
+ave-cloud-cli search <query>             Token search
 ```
 
 ### Data WebSocket (Pro)
 ```
-ave-cloud-rs-cli stream price <chain> <addr>  Real-time prices
-ave-cloud-rs-cli stream tx <chain> <addr>     Real-time transactions
-ave-cloud-rs-cli daemon --skill data-wss     Background daemon
+ave-cloud-cli stream price <chain> <addr>  Real-time prices
+ave-cloud-cli stream tx <chain> <addr>     Real-time transactions
+ave-cloud-cli daemon --skill data-wss     Background daemon
 ```
 
 ### Trading (Normal/Pro)
 ```
-ave-cloud-rs-cli buy <chain> <token> <usd>   Market buy
-ave-cloud-rs-cli sell <chain> <token> <usd>  Market sell
-ave-cloud-rs-cli orders                       List orders
+ave-cloud-cli buy <chain> <token> <usd>   Market buy
+ave-cloud-cli sell <chain> <token> <usd>  Market sell
+ave-cloud-cli orders                       List orders
 ```
 
 ## Raspberry Pi
@@ -95,7 +95,7 @@ ave-cloud-rs-cli orders                       List orders
 ./scripts/build-rpi.sh aarch64
 
 # Deploy
-scp target/aarch64-unknown-linux-gnu/release/ave-cloud-rs-cli pi@pi:/usr/local/bin/
+scp target/aarch64-unknown-linux-gnu/release/ave-cloud-cli pi@pi:/usr/local/bin/
 ```
 
 ## Development

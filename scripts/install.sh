@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# One-liner installer for ave-cloud-rs-cli
+# One-liner installer for ave-cloud-cli
 #
-# Usage: curl -fsSL https://raw.githubusercontent.com/mantis-box/ave-cloud-rs-cli/main/scripts/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/mantis-box/ave-cloud-cli/main/scripts/install.sh | sh
 #
 # Or download specific version:
-# curl -fsSL https://raw.githubusercontent.com/mantis-box/ave-cloud-rs-cli/v0.1.0/scripts/install.sh | sh
+# curl -fsSL https://raw.githubusercontent.com/mantis-box/ave-cloud-cli/v0.1.0/scripts/install.sh | sh
 
 set -e
 
 VERSION=${VERSION:-latest}
 INSTALL_DIR=${INSTALL_DIR:-/usr/local/bin}
-REPO="mantis-box/ave-cloud-rs-cli"
+REPO="mantis-box/ave-cloud-cli"
 
 # Detect architecture
 ARCH=$(uname -m)
@@ -49,7 +49,7 @@ fi
 TEMP_DIR=$(mktemp -d)
 trap "rm -rf $TEMP_DIR" EXIT
 
-BINARY_NAME="ave-cloud-rs-cli-${TARGET}"
+BINARY_NAME="ave-cloud-cli-${TARGET}"
 DOWNLOAD_URL="https://github.com/${REPO}/releases/download/${VERSION}/${BINARY_NAME}"
 
 echo "Downloading from $DOWNLOAD_URL..."
@@ -66,13 +66,13 @@ chmod +x "$BINARY_NAME"
 
 # Install
 if [ -w "$INSTALL_DIR" ]; then
-    mv "$BINARY_NAME" "$INSTALL_DIR/ave-cloud-rs-cli"
-    echo "Installed to $INSTALL_DIR/ave-cloud-rs-cli"
+    mv "$BINARY_NAME" "$INSTALL_DIR/ave-cloud-cli"
+    echo "Installed to $INSTALL_DIR/ave-cloud-cli"
 else
     echo "Note: $INSTALL_DIR is not writable, using sudo..."
-    sudo mv "$BINARY_NAME" "$INSTALL_DIR/ave-cloud-rs-cli"
-    sudo chmod +x "$INSTALL_DIR/ave-cloud-rs-cli"
-    echo "Installed to $INSTALL_DIR/ave-cloud-rs-cli"
+    sudo mv "$BINARY_NAME" "$INSTALL_DIR/ave-cloud-cli"
+    sudo chmod +x "$INSTALL_DIR/ave-cloud-cli"
+    echo "Installed to $INSTALL_DIR/ave-cloud-cli"
 fi
 
 echo ""
@@ -84,5 +84,5 @@ echo "     export AVE_API_KEY=your_api_key"
 echo "     export API_PLAN=free"
 echo ""
 echo "  2. Try it out:"
-echo "     ave-cloud-rs-cli price BSC 0x1234..."
+echo "     ave-cloud-cli price BSC 0x1234..."
 echo ""

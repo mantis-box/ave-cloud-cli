@@ -15,7 +15,7 @@ use crate::rest::trade::{ProxyWalletApi, TradeRestApi};
 use crate::rest::AveClient;
 
 #[derive(Parser)]
-#[command(name = "ave-cloud-rs-skills")]
+#[command(name = "ave-cloud-skills")]
 #[command(version = "0.1.0")]
 #[command(about = "ZeroClaw skill suite for Ave Cloud API", long_about = None)]
 struct Cli {
