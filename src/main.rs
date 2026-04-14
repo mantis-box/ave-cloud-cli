@@ -947,7 +947,7 @@ async fn execute_command(cli: Cli, config: Config) -> Result<(), Box<dyn std::er
             size,
         } => {
             let result = data_v2
-                .kline_token(&chain, &address, interval, size)
+                .kline_token(&chain, &address, interval, size, None, None, None)
                 .await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&result)?);
@@ -966,7 +966,9 @@ async fn execute_command(cli: Cli, config: Config) -> Result<(), Box<dyn std::er
             interval,
             size,
         } => {
-            let result = data_v2.kline_pair(&chain, &address, interval, size).await?;
+            let result = data_v2
+                .kline_pair(&chain, &address, interval, size, None, None, None)
+                .await?;
             if cli.json {
                 println!("{}", serde_json::to_string_pretty(&result)?);
             } else {

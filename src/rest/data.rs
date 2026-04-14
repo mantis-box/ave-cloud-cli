@@ -34,6 +34,7 @@ impl<'a> DataApiV2<'a> {
         if let Some(c) = chain {
             params.push(("chain".to_string(), c.to_string()));
         }
+        let limit = limit.map(|l| l.min(300));
         if let Some(l) = limit {
             params.push(("limit".to_string(), l.to_string()));
         }
@@ -46,6 +47,12 @@ impl<'a> DataApiV2<'a> {
 
     /// Batch search token details by address-chain list
     pub async fn search_details(&self, tokens: Vec<&str>) -> Result<Vec<TokenInfo>, ZeroClawError> {
+        if tokens.len() > 50 {
+            return Err(ZeroClawError::Api {
+                code: 400,
+                message: "Exceeds maximum of 50 tokens per request".to_string(),
+            });
+        }
         let body = serde_json::json!({
             "token_ids": tokens
         });
@@ -87,6 +94,12 @@ impl<'a> DataApiV2<'a> {
         tvl_min: Option<f64>,
         volume_min: Option<f64>,
     ) -> Result<BatchPriceResponse, ZeroClawError> {
+        if tokens.len() > 200 {
+            return Err(ZeroClawError::Api {
+                code: 400,
+                message: "Exceeds maximum of 200 tokens per request".to_string(),
+            });
+        }
         let mut body = serde_json::json!({
             "token_ids": tokens
         });
@@ -128,6 +141,16 @@ impl<'a> DataApiV2<'a> {
         );
         self.client.get_v2(&path, &params).await
     }
+
+    /// Get top 100 tokens for a pair
+    pub async fn top100(&self, chain: &str, address: &str) -> Result<Vec<TokenInfo>, ZeroClawError> {
+        let path = format!(
+            "/tokens/top100/{}-{}",
+            address.to_lowercase(),
+            chain.to_lowercase()
+        );
+        self.client.get_v2(&path, &[]).await
+    }
 }
 
 // ============================================================
@@ -143,12 +166,24 @@ impl<'a> DataApiV2<'a> {
         address: &str,
         interval: u32,
         size: u32,
+        u: Option<u32>,
+        r: Option<u32>,
+        m: Option<u32>,
     ) -> Result<KlineResponse, ZeroClawError> {
         let path = format!("/klines/token/{}-{}", address, chain);
-        let params: Vec<(String, String)> = vec![
+        let mut params: Vec<(String, String)> = vec![
             ("interval".to_string(), interval.to_string()),
             ("size".to_string(), size.to_string()),
         ];
+        if let Some(v) = u {
+            params.push(("u".to_string(), v.to_string()));
+        }
+        if let Some(v) = r {
+            params.push(("r".to_string(), v.to_string()));
+        }
+        if let Some(v) = m {
+            params.push(("m".to_string(), v.to_string()));
+        }
         self.client.get_v2(&path, &params).await
     }
 
@@ -159,12 +194,24 @@ impl<'a> DataApiV2<'a> {
         address: &str,
         interval: u32,
         size: u32,
+        u: Option<u32>,
+        r: Option<u32>,
+        m: Option<u32>,
     ) -> Result<KlineResponse, ZeroClawError> {
         let path = format!("/klines/pair/{}-{}", address, chain);
-        let params: Vec<(String, String)> = vec![
+        let mut params: Vec<(String, String)> = vec![
             ("interval".to_string(), interval.to_string()),
             ("size".to_string(), size.to_string()),
         ];
+        if let Some(v) = u {
+            params.push(("u".to_string(), v.to_string()));
+        }
+        if let Some(v) = r {
+            params.push(("r".to_string(), v.to_string()));
+        }
+        if let Some(v) = m {
+            params.push(("m".to_string(), v.to_string()));
+        }
         self.client.get_v2(&path, &params).await
     }
 
@@ -505,6 +552,7 @@ impl<'a> DataApiV2<'a> {
         if let Some(t) = type_ {
             params.push(("type".to_string(), t.to_string()));
         }
+        let limit = limit.map(|l| l.min(300));
         if let Some(l) = limit {
             params.push(("limit".to_string(), l.to_string()));
         }
@@ -568,9 +616,8 @@ impl<'a> DataApiV2<'a> {
         page_no: Option<u32>,
     ) -> Result<Vec<Signal>, ZeroClawError> {
         let mut params: Vec<(String, String)> = vec![];
-        if let Some(c) = chain {
-            params.push(("chain".to_string(), c.to_string()));
-        }
+        let c = chain.unwrap_or("solana");
+        params.push(("chain".to_string(), c.to_string()));
         if let Some(s) = page_size {
             params.push(("pageSize".to_string(), s.to_string()));
         }

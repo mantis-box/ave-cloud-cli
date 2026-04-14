@@ -449,9 +449,13 @@ impl<'a> DataApi<'a> {
             price_usd: f64,
         }
 
+        let body = serde_json::json!({
+            "token_ids": [format!("{}-{}", address.to_lowercase(), chain.to_lowercase())]
+        });
+
         let data: PriceResponse = self
             .client
-            .get("/v1/token/price", &[("chain", chain), ("address", address)])
+            .post_v2("/tokens/price", body)
             .await?;
 
         Ok(data.price_usd)
@@ -462,9 +466,12 @@ impl<'a> DataApi<'a> {
         chain: &str,
         address: &str,
     ) -> Result<crate::types::TokenInfo, ZeroClawError> {
-        self.client
-            .get("/v1/token/info", &[("chain", chain), ("address", address)])
-            .await
+        let path = format!(
+            "/tokens/{}-{}",
+            address.to_lowercase(),
+            chain.to_lowercase()
+        );
+        self.client.get_v2(&path, &[]).await
     }
 
     pub async fn search(
@@ -472,14 +479,11 @@ impl<'a> DataApi<'a> {
         query: &str,
         chain: Option<&str>,
     ) -> Result<Vec<crate::types::TokenInfo>, ZeroClawError> {
-        match chain {
-            Some(c) => {
-                self.client
-                    .get("/v1/token/search", &[("q", query), ("chain", c)])
-                    .await
-            }
-            None => self.client.get("/v1/token/search", &[("q", query)]).await,
+        let mut params: Vec<(String, String)> = vec![("keyword".to_string(), query.to_string())];
+        if let Some(c) = chain {
+            params.push(("chain".to_string(), c.to_string()));
         }
+        self.client.get_v2("/tokens", &params).await
     }
 
     pub async fn kline(
@@ -489,17 +493,18 @@ impl<'a> DataApi<'a> {
         interval: &str,
         limit: u32,
     ) -> Result<Vec<crate::types::Kline>, ZeroClawError> {
-        self.client
-            .get(
-                "/v1/token/kline",
-                &[
-                    ("chain", chain),
-                    ("address", address),
-                    ("interval", interval),
-                    ("limit", &limit.to_string()),
-                ],
-            )
-            .await
+        #[derive(serde::Deserialize)]
+        struct KlineResponse {
+            points: Vec<crate::types::Kline>,
+        }
+
+        let path = format!("/klines/token/{}-{}", address.to_lowercase(), chain.to_lowercase());
+        let params: Vec<(String, String)> = vec![
+            ("interval".to_string(), interval.to_string()),
+            ("size".to_string(), limit.to_string()),
+        ];
+        let resp: KlineResponse = self.client.get_v2(&path, &params).await?;
+        Ok(resp.points)
     }
 
     pub async fn holders(
@@ -508,44 +513,41 @@ impl<'a> DataApi<'a> {
         address: &str,
         page: u32,
     ) -> Result<Vec<serde_json::Value>, ZeroClawError> {
-        self.client
-            .get(
-                "/v1/token/holders",
-                &[
-                    ("chain", chain),
-                    ("address", address),
-                    ("page", &page.to_string()),
-                ],
-            )
-            .await
+        let path = format!(
+            "/tokens/holders/{}-{}",
+            address.to_lowercase(),
+            chain.to_lowercase()
+        );
+        let params: Vec<(String, String)> = vec![("page".to_string(), page.to_string())];
+        self.client.get_v2(&path, &params).await
     }
 
     pub async fn swap_txs(
         &self,
         chain: &str,
         address: &str,
-        limit: u32,
+        _limit: u32,
     ) -> Result<Vec<crate::types::SwapTx>, ZeroClawError> {
-        self.client
-            .get(
-                "/v1/token/swaps",
-                &[
-                    ("chain", chain),
-                    ("address", address),
-                    ("limit", &limit.to_string()),
-                ],
-            )
-            .await
+        let path = format!("/txs/{}-{}", address.to_lowercase(), chain.to_lowercase());
+        self.client.get_v2(&path, &[]).await
     }
 
     pub async fn trending(
         &self,
         chain: Option<&str>,
     ) -> Result<Vec<crate::types::TokenInfo>, ZeroClawError> {
-        match chain {
-            Some(c) => self.client.get("/v1/token/trending", &[("chain", c)]).await,
-            None => self.client.get("/v1/token/trending", &[]).await,
-        }
+        let params: Vec<(String, String)> = match chain {
+            Some(c) => vec![
+                ("chain".to_string(), c.to_string()),
+                ("current_page".to_string(), "1".to_string()),
+                ("page_size".to_string(), "20".to_string()),
+            ],
+            None => vec![
+                ("current_page".to_string(), "1".to_string()),
+                ("page_size".to_string(), "20".to_string()),
+            ],
+        };
+        self.client.get_v2("/tokens/trending", &params).await
     }
 
     pub async fn risk_check(
@@ -553,9 +555,12 @@ impl<'a> DataApi<'a> {
         chain: &str,
         address: &str,
     ) -> Result<crate::types::RiskScore, ZeroClawError> {
-        self.client
-            .get("/v1/token/risk", &[("chain", chain), ("address", address)])
-            .await
+        let path = format!(
+            "/contracts/{}-{}",
+            address.to_lowercase(),
+            chain.to_lowercase()
+        );
+        self.client.get_v2(&path, &[]).await
     }
 }
 
@@ -578,18 +583,14 @@ impl<'a> TradeApi<'a> {
         amount_in: &str,
         slippage_bps: u32,
     ) -> Result<crate::types::SwapQuote, ZeroClawError> {
-        self.client
-            .get(
-                "/v1/trade/quote",
-                &[
-                    ("chain", chain),
-                    ("token_in", token_in),
-                    ("token_out", token_out),
-                    ("amount_in", amount_in),
-                    ("slippage_bps", &slippage_bps.to_string()),
-                ],
-            )
-            .await
+        let params = vec![
+            ("chain".to_string(), chain.to_string()),
+            ("token_in".to_string(), token_in.to_string()),
+            ("token_out".to_string(), token_out.to_string()),
+            ("in_amount".to_string(), amount_in.to_string()),
+            ("slippage".to_string(), slippage_bps.to_string()),
+        ];
+        self.client.trade_get("/quote", &params, false).await
     }
 
     pub async fn build_chain_tx(
@@ -606,16 +607,14 @@ impl<'a> TradeApi<'a> {
             wallet_address: &'a str,
         }
 
-        self.client
-            .post(
-                "/v1/trade/build",
-                &BuildTxRequest {
-                    chain,
-                    quote,
-                    wallet_address,
-                },
-            )
-            .await
+        let body = serde_json::to_value(&BuildTxRequest {
+            chain,
+            quote,
+            wallet_address,
+        })
+        .map_err(|e| ZeroClawError::Config(format!("Failed to serialize request: {}", e)))?;
+
+        self.client.trade_post("/build", body, false).await
     }
 
     pub async fn broadcast_tx(
@@ -636,17 +635,13 @@ impl<'a> TradeApi<'a> {
             tx_hash: String,
         }
 
-        let resp: BroadcastResponse = self
-            .client
-            .post(
-                "/v1/trade/broadcast",
-                &BroadcastRequest {
-                    chain,
-                    signed_tx: signed_tx_hex,
-                },
-            )
-            .await?;
+        let body = serde_json::to_value(&BroadcastRequest {
+            chain,
+            signed_tx: signed_tx_hex,
+        })
+        .map_err(|e| ZeroClawError::Config(format!("Failed to serialize request: {}", e)))?;
 
+        let resp: BroadcastResponse = self.client.trade_post("/broadcast", body, false).await?;
         Ok(resp.tx_hash)
     }
 
@@ -656,55 +651,23 @@ impl<'a> TradeApi<'a> {
     ) -> Result<crate::types::Order, ZeroClawError> {
         self.client.require_plan(ApiPlan::Normal, "proxy wallet")?;
 
-        let (timestamp, signature) = {
-            let body_str =
-                AveClient::serialize_sorted(&serde_json::to_value(&params).map_err(|e| {
-                    ZeroClawError::Config(format!("Failed to serialize order: {}", e))
-                })?);
-            self.client
-                .sign_proxy_request("POST", "/v1/trade/proxy/order", &body_str)
-        };
+        let body = serde_json::to_value(&params)
+            .map_err(|e| ZeroClawError::Config(format!("Failed to serialize order: {}", e)))?;
 
-        let resp = self
-            .client
-            .http
-            .post(format!("{}{}", TRADE_API_BASE_URL, "/v1/trade/proxy/order"))
-            .header(HEADER_TRADE_ACCESS_KEY, &self.client.config.api_key)
-            .header(HEADER_TRADE_ACCESS_TIMESTAMP, &timestamp)
-            .header(HEADER_TRADE_ACCESS_SIGN, &signature)
-            .json(&params)
-            .send()
-            .await?;
-
-        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            return Err(ZeroClawError::RateLimit);
-        }
-
-        let text = resp.text().await?;
-        let parsed: crate::types::RawApiResponse = serde_json::from_str(&text)?;
-
-        if parsed.status != 1 && parsed.status != 200 {
-            return Err(ZeroClawError::Api {
-                code: parsed.status,
-                message: parsed.msg,
-            });
-        }
-
-        let order: crate::types::Order = serde_json::from_value(parsed.data.unwrap_or_default())?;
-
-        Ok(order)
+        self.client.trade_post("/proxy/order", body, true).await
     }
 
     pub async fn cancel_proxy_order(&self, order_id: &str) -> Result<(), ZeroClawError> {
         self.client.require_plan(ApiPlan::Normal, "proxy wallet")?;
 
-        let path = format!("/v1/trade/proxy/order/{}", order_id);
+        let path = format!("/proxy/order/{}", order_id);
         let (timestamp, signature) = self.client.sign_proxy_request("DELETE", &path, "");
 
+        let url = format!("{}{}", TRADE_API_BASE_URL, path);
         let resp = self
             .client
             .http
-            .delete(format!("{}{}", TRADE_API_BASE_URL, path))
+            .delete(&url)
             .header(HEADER_TRADE_ACCESS_KEY, &self.client.config.api_key)
             .header(HEADER_TRADE_ACCESS_TIMESTAMP, &timestamp)
             .header(HEADER_TRADE_ACCESS_SIGN, &signature)
@@ -734,7 +697,7 @@ impl<'a> TradeApi<'a> {
     ) -> Result<Vec<crate::types::Order>, ZeroClawError> {
         self.client.require_plan(ApiPlan::Normal, "proxy wallet")?;
 
-        match status {
+        let params: Vec<(String, String)> = match status {
             Some(s) => {
                 let status_str = match s {
                     crate::types::OrderStatus::Pending => "Pending",
@@ -743,12 +706,11 @@ impl<'a> TradeApi<'a> {
                     crate::types::OrderStatus::Cancelled => "Cancelled",
                     crate::types::OrderStatus::Failed => "Failed",
                 };
-                self.client
-                    .get("/v1/trade/proxy/orders", &[("status", status_str)])
-                    .await
+                vec![("status".to_string(), status_str.to_string())]
             }
-            None => self.client.get("/v1/trade/proxy/orders", &[]).await,
-        }
+            None => vec![],
+        };
+        self.client.trade_get("/proxy/orders", &params, true).await
     }
 
     pub async fn get_proxy_order(
@@ -757,8 +719,7 @@ impl<'a> TradeApi<'a> {
     ) -> Result<crate::types::Order, ZeroClawError> {
         self.client.require_plan(ApiPlan::Normal, "proxy wallet")?;
 
-        self.client
-            .get(&format!("/v1/trade/proxy/order/{}", order_id), &[])
-            .await
+        let params = vec![("order_id".to_string(), order_id.to_string())];
+        self.client.trade_get("/proxy/order", &params, true).await
     }
 }
