@@ -1,0 +1,33 @@
+[Unit]
+Description=AVE Cloud RS CLI Daemon
+Documentation=https://github.com/owner/ave-cloud-rs-cli
+After=network.target
+
+[Service]
+Type=simple
+User=pi
+EnvironmentFile=/etc/ave-cloud-rs-cli/env
+
+# Adjust path as needed
+ExecStart=/usr/local/bin/ave-cloud-rs-cli daemon --skill data-wss
+
+Restart=on-failure
+RestartSec=5
+
+# Resource limits for Raspberry Pi
+MemoryMax=64M
+CPUQuota=20%
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=ave-cloud-rs-cli
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log
+
+[Install]
+WantedBy=multi-user.target
