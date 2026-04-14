@@ -455,10 +455,7 @@ impl<'a> DataApi<'a> {
             "token_ids": [format!("{}-{}", address.to_lowercase(), chain.to_lowercase())]
         });
 
-        let data: PriceResponse = self
-            .client
-            .post_v2("/tokens/price", body)
-            .await?;
+        let data: PriceResponse = self.client.post_v2("/tokens/price", body).await?;
 
         Ok(data.price_usd)
     }
@@ -500,7 +497,11 @@ impl<'a> DataApi<'a> {
             points: Vec<crate::types::Kline>,
         }
 
-        let path = format!("/klines/token/{}-{}", address.to_lowercase(), chain.to_lowercase());
+        let path = format!(
+            "/klines/token/{}-{}",
+            address.to_lowercase(),
+            chain.to_lowercase()
+        );
         let params: Vec<(String, String)> = vec![
             ("interval".to_string(), interval.to_string()),
             ("size".to_string(), limit.to_string()),

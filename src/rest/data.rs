@@ -143,7 +143,11 @@ impl<'a> DataApiV2<'a> {
     }
 
     /// Get top 100 tokens for a pair
-    pub async fn top100(&self, chain: &str, address: &str) -> Result<Vec<TokenInfo>, ZeroClawError> {
+    pub async fn top100(
+        &self,
+        chain: &str,
+        address: &str,
+    ) -> Result<Vec<TokenInfo>, ZeroClawError> {
         let path = format!(
             "/tokens/top100/{}-{}",
             address.to_lowercase(),
