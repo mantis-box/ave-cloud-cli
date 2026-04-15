@@ -27,8 +27,8 @@ pub const TRADE_API_BASE_URL: &str = "https://bot-api.ave.ai";
 pub const TRADE_WSS_BASE_URL: &str = "wss://bot-api.ave.ai/thirdws";
 
 pub struct AveClient {
-    http: Client,
-    config: Config,
+    pub(crate) http: Client,
+    pub(crate) config: Config,
     #[allow(dead_code)]
     limiter: Arc<Semaphore>,
     #[allow(dead_code)]
@@ -74,6 +74,14 @@ impl AveClient {
         &self.config
     }
 
+    // ============================================================
+    // Internal: status validation matching Python handle_response()
+    // Python: status in (0, 1, 200) or status is None → success
+    // ============================================================
+    fn is_success_status(status: i32) -> bool {
+        matches!(status, 0 | 1 | 200)
+    }
+
     #[allow(dead_code)]
     pub(crate) async fn get<T: DeserializeOwned>(
         &self,
@@ -100,7 +108,7 @@ impl AveClient {
         let text = resp.text().await?;
         let parsed: crate::types::RawApiResponse = serde_json::from_str(&text)?;
 
-        if parsed.status != 1 && parsed.status != 200 {
+        if !Self::is_success_status(parsed.status) {
             return Err(ZeroClawError::Api {
                 code: parsed.status,
                 message: parsed.msg,
@@ -108,7 +116,6 @@ impl AveClient {
         }
 
         let data: T = serde_json::from_value(parsed.data.unwrap_or(serde_json::Value::Null))?;
-
         Ok(data)
     }
 
@@ -138,7 +145,7 @@ impl AveClient {
         let text = resp.text().await?;
         let parsed: crate::types::RawApiResponse = serde_json::from_str(&text)?;
 
-        if parsed.status != 1 && parsed.status != 200 {
+        if !Self::is_success_status(parsed.status) {
             return Err(ZeroClawError::Api {
                 code: parsed.status,
                 message: parsed.msg,
@@ -146,7 +153,6 @@ impl AveClient {
         }
 
         let data: T = serde_json::from_value(parsed.data.unwrap_or(serde_json::Value::Null))?;
-
         Ok(data)
     }
 
@@ -155,7 +161,7 @@ impl AveClient {
     }
 
     // ============================================================
-    // V2 Data API Methods (Phase 1)
+    // V2 Data API — Typed Methods
     // ============================================================
 
     pub(crate) async fn get_v2<T: DeserializeOwned>(
@@ -183,7 +189,7 @@ impl AveClient {
         let text = resp.text().await?;
         let parsed: crate::types::RawApiResponse = serde_json::from_str(&text)?;
 
-        if parsed.status != 1 && parsed.status != 200 {
+        if !Self::is_success_status(parsed.status) {
             return Err(ZeroClawError::Api {
                 code: parsed.status,
                 message: parsed.msg,
@@ -191,7 +197,6 @@ impl AveClient {
         }
 
         let data: T = serde_json::from_value(parsed.data.unwrap_or(serde_json::Value::Null))?;
-
         Ok(data)
     }
 
@@ -220,7 +225,7 @@ impl AveClient {
         let text = resp.text().await?;
         let parsed: crate::types::RawApiResponse = serde_json::from_str(&text)?;
 
-        if parsed.status != 1 && parsed.status != 200 {
+        if !Self::is_success_status(parsed.status) {
             return Err(ZeroClawError::Api {
                 code: parsed.status,
                 message: parsed.msg,
@@ -228,12 +233,94 @@ impl AveClient {
         }
 
         let data: T = serde_json::from_value(parsed.data.unwrap_or(serde_json::Value::Null))?;
-
         Ok(data)
     }
 
     // ============================================================
-    // Trade API V2 Methods (Phase 3 & 4)
+    // V2 Data API — Raw JSON Passthrough (matches Python exactly)
+    // Python: print(json.dumps(resp.json(), indent=2))
+    // Returns the entire response Value {status, msg, data}
+    // ============================================================
+
+    pub(crate) async fn get_v2_raw(
+        &self,
+        path: &str,
+        params: &[(String, String)],
+    ) -> Result<serde_json::Value, ZeroClawError> {
+        self.wait_for_quota().await;
+
+        let url = format!("{}{}", DATA_V2_BASE_URL, path);
+        debug!("GET v2 raw {}", path);
+
+        let resp = self
+            .http
+            .get(&url)
+            .header(HEADER_DATA_API_KEY, &self.config.api_key)
+            .query(&params)
+            .send()
+            .await?;
+
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(ZeroClawError::RateLimit);
+        }
+
+        let text = resp.text().await?;
+        let value: serde_json::Value = serde_json::from_str(&text)?;
+
+        // Status check on raw value
+        let status = value.get("status").and_then(|s| s.as_i64()).unwrap_or(1) as i32;
+        if !Self::is_success_status(status) {
+            let msg = value
+                .get("msg")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            return Err(ZeroClawError::Api { code: status, message: msg });
+        }
+
+        Ok(value)
+    }
+
+    pub(crate) async fn post_v2_raw(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+    ) -> Result<serde_json::Value, ZeroClawError> {
+        self.wait_for_quota().await;
+
+        let url = format!("{}{}", DATA_V2_BASE_URL, path);
+        debug!("POST v2 raw {}", path);
+
+        let resp = self
+            .http
+            .post(&url)
+            .header(HEADER_DATA_API_KEY, &self.config.api_key)
+            .json(&body)
+            .send()
+            .await?;
+
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(ZeroClawError::RateLimit);
+        }
+
+        let text = resp.text().await?;
+        let value: serde_json::Value = serde_json::from_str(&text)?;
+
+        let status = value.get("status").and_then(|s| s.as_i64()).unwrap_or(1) as i32;
+        if !Self::is_success_status(status) {
+            let msg = value
+                .get("msg")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            return Err(ZeroClawError::Api { code: status, message: msg });
+        }
+
+        Ok(value)
+    }
+
+    // ============================================================
+    // Trade API V2 Methods — Typed
     // ============================================================
 
     pub(crate) async fn trade_get<T: DeserializeOwned>(
@@ -251,11 +338,18 @@ impl AveClient {
         req = req.header(HEADER_TRADE_ACCESS_KEY, &self.config.api_key);
 
         if proxy {
-            if let Some(ref _secret) = self.config.secret_key {
-                let (timestamp, signature) = self.sign_proxy_request("GET", path, "");
-                req = req
-                    .header(HEADER_TRADE_ACCESS_TIMESTAMP, &timestamp)
-                    .header(HEADER_TRADE_ACCESS_SIGN, &signature);
+            match &self.config.secret_key {
+                Some(_) => {
+                    let (timestamp, signature) = self.sign_proxy_request("GET", path, "");
+                    req = req
+                        .header(HEADER_TRADE_ACCESS_TIMESTAMP, &timestamp)
+                        .header(HEADER_TRADE_ACCESS_SIGN, &signature);
+                }
+                None => {
+                    return Err(ZeroClawError::Config(
+                        "AVE_SECRET_KEY is required for proxy wallet commands".to_string()
+                    ));
+                }
             }
         }
 
@@ -268,7 +362,7 @@ impl AveClient {
         let text = resp.text().await?;
         let parsed: crate::types::RawApiResponse = serde_json::from_str(&text)?;
 
-        if parsed.status != 1 && parsed.status != 200 {
+        if !Self::is_success_status(parsed.status) {
             return Err(ZeroClawError::Api {
                 code: parsed.status,
                 message: parsed.msg,
@@ -276,7 +370,6 @@ impl AveClient {
         }
 
         let data: T = serde_json::from_value(parsed.data.unwrap_or(serde_json::Value::Null))?;
-
         Ok(data)
     }
 
@@ -295,12 +388,19 @@ impl AveClient {
         req = req.header(HEADER_TRADE_ACCESS_KEY, &self.config.api_key);
 
         if proxy {
-            if let Some(ref _secret) = self.config.secret_key {
-                let body_str = AveClient::serialize_sorted(&body);
-                let (timestamp, signature) = self.sign_proxy_request("POST", path, &body_str);
-                req = req
-                    .header(HEADER_TRADE_ACCESS_TIMESTAMP, &timestamp)
-                    .header(HEADER_TRADE_ACCESS_SIGN, &signature);
+            match &self.config.secret_key {
+                Some(_) => {
+                    let body_str = AveClient::serialize_sorted(&body);
+                    let (timestamp, signature) = self.sign_proxy_request("POST", path, &body_str);
+                    req = req
+                        .header(HEADER_TRADE_ACCESS_TIMESTAMP, &timestamp)
+                        .header(HEADER_TRADE_ACCESS_SIGN, &signature);
+                }
+                None => {
+                    return Err(ZeroClawError::Config(
+                        "AVE_SECRET_KEY is required for proxy wallet commands".to_string()
+                    ));
+                }
             }
         }
 
@@ -313,7 +413,7 @@ impl AveClient {
         let text = resp.text().await?;
         let parsed: crate::types::RawApiResponse = serde_json::from_str(&text)?;
 
-        if parsed.status != 1 && parsed.status != 200 {
+        if !Self::is_success_status(parsed.status) {
             return Err(ZeroClawError::Api {
                 code: parsed.status,
                 message: parsed.msg,
@@ -321,13 +421,124 @@ impl AveClient {
         }
 
         let data: T = serde_json::from_value(parsed.data.unwrap_or(serde_json::Value::Null))?;
-
         Ok(data)
     }
 
-    /// Sign request for proxy wallet using the Python reference algorithm:
-    /// message = timestamp + method + path + body
-    /// signature = base64(hmac_sha256(secret, message))
+    // ============================================================
+    // Trade API — Raw JSON Passthrough
+    // ============================================================
+
+    pub(crate) async fn trade_get_raw(
+        &self,
+        path: &str,
+        params: &[(String, String)],
+        proxy: bool,
+    ) -> Result<serde_json::Value, ZeroClawError> {
+        self.wait_for_quota().await;
+
+        let url = format!("{}{}", TRADE_API_BASE_URL, path);
+        debug!("GET trade raw {} (proxy={})", path, proxy);
+
+        let mut req = self.http.get(&url);
+        req = req.header(HEADER_TRADE_ACCESS_KEY, &self.config.api_key);
+
+        if proxy {
+            match &self.config.secret_key {
+                Some(_) => {
+                    let (timestamp, signature) = self.sign_proxy_request("GET", path, "");
+                    req = req
+                        .header(HEADER_TRADE_ACCESS_TIMESTAMP, &timestamp)
+                        .header(HEADER_TRADE_ACCESS_SIGN, &signature);
+                }
+                None => {
+                    return Err(ZeroClawError::Config(
+                        "AVE_SECRET_KEY is required for proxy wallet commands".to_string()
+                    ));
+                }
+            }
+        }
+
+        let resp = req.query(&params).send().await?;
+
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(ZeroClawError::RateLimit);
+        }
+
+        let text = resp.text().await?;
+        let value: serde_json::Value = serde_json::from_str(&text)?;
+
+        let status = value.get("status").and_then(|s| s.as_i64()).unwrap_or(1) as i32;
+        if !Self::is_success_status(status) {
+            let msg = value
+                .get("msg")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            return Err(ZeroClawError::Api { code: status, message: msg });
+        }
+
+        Ok(value)
+    }
+
+    pub(crate) async fn trade_post_raw(
+        &self,
+        path: &str,
+        body: serde_json::Value,
+        proxy: bool,
+    ) -> Result<serde_json::Value, ZeroClawError> {
+        self.wait_for_quota().await;
+
+        let url = format!("{}{}", TRADE_API_BASE_URL, path);
+        debug!("POST trade raw {} (proxy={})", path, proxy);
+
+        let mut req = self.http.post(&url);
+        req = req.header(HEADER_TRADE_ACCESS_KEY, &self.config.api_key);
+
+        if proxy {
+            match &self.config.secret_key {
+                Some(_) => {
+                    let body_str = AveClient::serialize_sorted(&body);
+                    let (timestamp, signature) = self.sign_proxy_request("POST", path, &body_str);
+                    req = req
+                        .header(HEADER_TRADE_ACCESS_TIMESTAMP, &timestamp)
+                        .header(HEADER_TRADE_ACCESS_SIGN, &signature);
+                }
+                None => {
+                    return Err(ZeroClawError::Config(
+                        "AVE_SECRET_KEY is required for proxy wallet commands".to_string()
+                    ));
+                }
+            }
+        }
+
+        let resp = req.json(&body).send().await?;
+
+        if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(ZeroClawError::RateLimit);
+        }
+
+        let text = resp.text().await?;
+        let value: serde_json::Value = serde_json::from_str(&text)?;
+
+        let status = value.get("status").and_then(|s| s.as_i64()).unwrap_or(1) as i32;
+        if !Self::is_success_status(status) {
+            let msg = value
+                .get("msg")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+            return Err(ZeroClawError::Api { code: status, message: msg });
+        }
+
+        Ok(value)
+    }
+
+    // ============================================================
+    // HMAC Signing — matches Python headers.py exactly
+    // Python: timestamp = datetime.now(utc).isoformat().replace("+00:00","Z")
+    //         → "2026-04-15T04:17:57.832209Z" (with microseconds)
+    //         message = timestamp + method.upper() + path + body_sorted_json
+    // ============================================================
     fn sign_proxy_request(&self, method: &str, path: &str, body: &str) -> (String, String) {
         use base64::Engine;
         use hmac::{Hmac, Mac};
@@ -340,13 +551,14 @@ impl AveClient {
             None => return (String::new(), String::new()),
         };
 
-        // Timestamp in ISO 8601 format (Python reference: second precision, no microseconds)
-        let timestamp = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+        // Match Python: datetime.now(utc).isoformat().replace("+00:00", "Z")
+        // Result: "2026-04-15T04:17:57.832209Z" — includes microseconds
+        let now = chrono::Utc::now();
+        let timestamp = now.to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
 
-        // Message: timestamp + method + path + body (body serialized as JSON with sorted keys)
+        // Message: timestamp + METHOD + path + body (body = sorted JSON or empty)
         let mut message = format!("{}{}{}", timestamp, method.to_uppercase(), path);
         if !body.is_empty() {
-            // Python reference: json.dumps(body, sort_keys=True, separators=(",", ":"))
             message.push_str(body);
         }
 
@@ -434,7 +646,7 @@ impl AveClient {
 }
 
 // ============================================================
-// Data API
+// Data API (legacy typed wrappers — kept for backward compat)
 // ============================================================
 
 #[allow(dead_code)]
@@ -504,7 +716,7 @@ impl<'a> DataApi<'a> {
         );
         let params: Vec<(String, String)> = vec![
             ("interval".to_string(), interval.to_string()),
-            ("size".to_string(), limit.to_string()),
+            ("limit".to_string(), limit.to_string()),
         ];
         let resp: KlineResponse = self.client.get_v2(&path, &params).await?;
         Ok(resp.points)
@@ -568,7 +780,7 @@ impl<'a> DataApi<'a> {
 }
 
 // ============================================================
-// Trade API
+// Trade API (legacy typed wrappers — kept for backward compat)
 // ============================================================
 
 #[allow(dead_code)]
@@ -684,7 +896,7 @@ impl<'a> TradeApi<'a> {
         let text = resp.text().await?;
         let parsed: crate::types::RawApiResponse = serde_json::from_str(&text)?;
 
-        if parsed.status != 1 && parsed.status != 200 {
+        if !Self::is_success_status_static(parsed.status) {
             return Err(ZeroClawError::Api {
                 code: parsed.status,
                 message: parsed.msg,
@@ -692,6 +904,10 @@ impl<'a> TradeApi<'a> {
         }
 
         Ok(())
+    }
+
+    fn is_success_status_static(status: i32) -> bool {
+        matches!(status, 0 | 1 | 200)
     }
 
     pub async fn list_proxy_orders(

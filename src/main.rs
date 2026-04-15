@@ -10,19 +10,21 @@ mod types;
 mod ws;
 
 use crate::config::Config;
-use crate::rest::data::DataApiV2;
-use crate::rest::trade::{ProxyWalletApi, TradeRestApi};
 use crate::rest::AveClient;
 
+// ============================================================
+// CLI Definition
+// ============================================================
+
 #[derive(Parser)]
-#[command(name = "ave-cloud-skills")]
+#[command(name = "ave-cloud-cli")]
 #[command(version = "0.1.0")]
-#[command(about = "ZeroClaw skill suite for Ave Cloud API", long_about = None)]
+#[command(about = "Ave Cloud API CLI — ZeroClaw skill binary", long_about = None)]
 struct Cli {
     #[arg(short, long, default_value = "info")]
     log_level: String,
 
-    #[arg(short, long, help = "Output as JSON")]
+    #[arg(short, long, help = "Pretty-print JSON output (default: raw API response)")]
     json: bool,
 
     #[command(subcommand)]
@@ -32,122 +34,66 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     // ============================================================
-    // Data REST v1 Commands (existing)
+    // Data REST v2 — Token Queries
     // ============================================================
-    /// Get token price
-    Price { chain: String, address: String },
-    /// Get full token info
-    Info { chain: String, address: String },
-    /// Get kline/candlestick data
-    Kline {
-        chain: String,
-        address: String,
-        #[arg(long, default_value = "1h")]
-        interval: String,
-        #[arg(long, default_value = "100")]
-        limit: u32,
-    },
-    /// Get risk score for a token
-    Risk { chain: String, address: String },
-    /// Search for tokens
+    /// Search tokens by keyword
     Search {
         query: String,
         #[arg(long)]
         chain: Option<String>,
-    },
-    /// Stream real-time price updates (requires Pro plan)
-    StreamPrice { chain: String, address: String },
-    /// Stream real-time transactions (requires Pro plan)
-    StreamTx { chain: String, address: String },
-    /// Run as daemon for WebSocket streams (requires Pro plan)
-    Daemon {
-        #[arg(long, default_value = "data-wss")]
-        skill: String,
-    },
-    /// Place a market buy order (requires Normal/Pro plan)
-    Buy {
-        chain: String,
-        token: String,
-        amount_usd: f64,
-        #[arg(long, help = "Perform honeypot check before buying")]
-        safe: bool,
-        #[arg(long, help = "Take profit price")]
-        tp: Option<f64>,
-        #[arg(long, help = "Stop loss price")]
-        sl: Option<f64>,
-    },
-    /// Place a market sell order (requires Normal/Pro plan)
-    Sell {
-        chain: String,
-        token: String,
-        amount_usd: f64,
-    },
-    /// List orders
-    Orders {
+        #[arg(long, default_value = "20")]
+        limit: u32,
         #[arg(long)]
-        status: Option<String>,
+        orderby: Option<String>,
     },
-
-    // ============================================================
-    // Data REST v2 Commands (Phase 1)
-    // ============================================================
-    /// Batch get prices for tokens (v2)
-    BatchPrice {
-        #[arg(long, required = true)]
-        tokens: Vec<String>,
-        #[arg(long)]
-        tvl_min: Option<f64>,
-        #[arg(long)]
-        volume_min: Option<f64>,
-    },
-    /// Batch search token details by address-chain (v2)
+    /// Batch search token details by address-chain list (up to 50)
     SearchDetails {
-        #[arg(long, required = true)]
+        #[arg(long, required = true, num_args = 1..)]
         tokens: Vec<String>,
     },
-    /// Get kline data by token address (v2)
-    KlineToken {
+    /// Get tokens by platform/launchpad tag
+    PlatformTokens {
         #[arg(long, required = true)]
-        address: String,
-        #[arg(long, required = true)]
-        chain: String,
-        #[arg(long, default_value = "60")]
-        interval: u32,
-        #[arg(long, default_value = "24")]
-        size: u32,
-    },
-    /// Get kline data by pair address (v2)
-    KlinePair {
-        #[arg(long, required = true)]
-        address: String,
-        #[arg(long, required = true)]
-        chain: String,
-        #[arg(long, default_value = "60")]
-        interval: u32,
-        #[arg(long, default_value = "24")]
-        size: u32,
-    },
-    /// Get Ondo-mapped kline data (v2)
-    KlineOndo {
-        #[arg(long, required = true)]
-        pair: String,
-        #[arg(long, default_value = "60")]
-        interval: u32,
-        #[arg(long, default_value = "24")]
-        size: u32,
+        platform: String,
         #[arg(long)]
-        from_time: Option<i64>,
+        limit: Option<u32>,
         #[arg(long)]
-        to_time: Option<i64>,
+        orderby: Option<String>,
     },
-    /// Get token detail (v2)
+    /// Get token detail by address and chain
     Token {
         #[arg(long, required = true)]
         address: String,
         #[arg(long, required = true)]
         chain: String,
     },
-    /// Get token holders (v2)
+    /// Batch get prices for up to 200 tokens
+    BatchPrice {
+        #[arg(long, required = true, num_args = 1..)]
+        tokens: Vec<String>,
+        #[arg(long)]
+        tvl_min: Option<f64>,
+        #[arg(long)]
+        volume_min: Option<f64>,
+    },
+    /// Get a single token price (shorthand: POST /tokens/price)
+    Price {
+        chain: String,
+        address: String,
+    },
+    /// Get full token info
+    Info {
+        chain: String,
+        address: String,
+    },
+    /// Get top 100 tokens for a pair
+    Top100 {
+        #[arg(long, required = true)]
+        address: String,
+        #[arg(long, required = true)]
+        chain: String,
+    },
+    /// Get token holders
     Holders {
         #[arg(long, required = true)]
         address: String,
@@ -160,39 +106,91 @@ enum Commands {
         #[arg(long)]
         order: Option<String>,
     },
-    /// Get trending tokens (v2)
+
+    // ============================================================
+    // Data REST v2 — Kline
+    // ============================================================
+    /// Get kline data by token address
+    KlineToken {
+        #[arg(long, required = true)]
+        address: String,
+        #[arg(long, required = true)]
+        chain: String,
+        #[arg(long, default_value = "60")]
+        interval: u32,
+        #[arg(long, default_value = "24")]
+        limit: u32,
+    },
+    /// Get kline data by pair address
+    KlinePair {
+        #[arg(long, required = true)]
+        address: String,
+        #[arg(long, required = true)]
+        chain: String,
+        #[arg(long, default_value = "60")]
+        interval: u32,
+        #[arg(long, default_value = "24")]
+        limit: u32,
+    },
+    /// Get Ondo-mapped kline data
+    KlineOndo {
+        #[arg(long, required = true)]
+        pair: String,
+        #[arg(long, default_value = "60")]
+        interval: u32,
+        #[arg(long, default_value = "24")]
+        limit: u32,
+        #[arg(long)]
+        from_time: Option<i64>,
+        #[arg(long)]
+        to_time: Option<i64>,
+    },
+    /// Get kline/candlestick data (legacy alias → kline-token)
+    Kline {
+        chain: String,
+        address: String,
+        #[arg(long, default_value = "60")]
+        interval: u32,
+        #[arg(long, default_value = "100")]
+        limit: u32,
+    },
+
+    // ============================================================
+    // Data REST v2 — Market / Rankings
+    // ============================================================
+    /// Get trending tokens
     Trending {
         #[arg(long, required = true)]
         chain: String,
-        #[arg(long, default_value = "0")]
+        #[arg(long, default_value = "1")]
         page: u32,
         #[arg(long, default_value = "20")]
         page_size: u32,
     },
-    /// List rank topics (v2)
+    /// List available rank topics
     RankTopics,
-    /// Get token rankings by topic (v2)
+    /// Get token rankings by topic
     Ranks {
         #[arg(long, required = true)]
         topic: String,
     },
-    /// Get chains list (v2)
+    /// Get contract risk/security report
+    Risk {
+        chain: String,
+        address: String,
+    },
+    /// List all supported chains
     Chains,
-    /// Get main tokens for chain (v2)
+    /// Get main tokens for a chain
     MainTokens {
         #[arg(long, required = true)]
         chain: String,
     },
-    /// Get platform tokens (v2)
-    PlatformTokens {
-        #[arg(long, required = true)]
-        platform: String,
-        #[arg(long)]
-        limit: Option<u32>,
-        #[arg(long)]
-        orderby: Option<String>,
-    },
-    /// Get wallet swap history (v2)
+
+    // ============================================================
+    // Data REST v2 — Wallet / Address
+    // ============================================================
+    /// Get wallet swap transaction history
     AddressTxs {
         #[arg(long, required = true)]
         wallet: String,
@@ -209,7 +207,7 @@ enum Commands {
         #[arg(long)]
         page_size: Option<u32>,
     },
-    /// Get wallet PnL (v2)
+    /// Get wallet PnL for a specific token
     AddressPnl {
         #[arg(long, required = true)]
         wallet: String,
@@ -218,7 +216,7 @@ enum Commands {
         #[arg(long, required = true)]
         token: String,
     },
-    /// Get wallet token holdings (v2)
+    /// Get token holdings for a wallet
     WalletTokens {
         #[arg(long, required = true)]
         wallet: String,
@@ -239,7 +237,7 @@ enum Commands {
         #[arg(long)]
         blue_chips: bool,
     },
-    /// Get wallet info (v2)
+    /// Get wallet overview and stats
     WalletInfo {
         #[arg(long, required = true)]
         wallet: String,
@@ -248,7 +246,7 @@ enum Commands {
         #[arg(long)]
         self_address: Option<String>,
     },
-    /// List smart wallets (v2)
+    /// List smart wallets with profit filters
     SmartWallets {
         #[arg(long, required = true)]
         chain: String,
@@ -259,7 +257,7 @@ enum Commands {
         #[arg(long)]
         sort_dir: Option<String>,
     },
-    /// Get public trading signals (v2)
+    /// Get public trading signals
     Signals {
         #[arg(long)]
         chain: Option<String>,
@@ -268,14 +266,18 @@ enum Commands {
         #[arg(long)]
         page_no: Option<u32>,
     },
-    /// Get swap transactions for pair (v2)
+
+    // ============================================================
+    // Data REST v2 — Transactions
+    // ============================================================
+    /// Get swap transactions for a pair
     Txs {
         #[arg(long, required = true)]
         address: String,
         #[arg(long, required = true)]
         chain: String,
     },
-    /// Get liquidity transactions (v2)
+    /// Get liquidity transactions for a pair
     LiqTxs {
         #[arg(long, required = true)]
         address: String,
@@ -292,7 +294,7 @@ enum Commands {
         #[arg(long)]
         sort: Option<String>,
     },
-    /// Get transaction detail (v2)
+    /// Get transaction detail by hash
     TxDetail {
         #[arg(long, required = true)]
         chain: String,
@@ -307,7 +309,7 @@ enum Commands {
         #[arg(long)]
         limit: Option<u32>,
     },
-    /// Get trading pair detail (v2)
+    /// Get trading pair detail
     Pair {
         #[arg(long, required = true)]
         address: String,
@@ -316,7 +318,7 @@ enum Commands {
     },
 
     // ============================================================
-    // Trade Chain Wallet Commands (Phase 3)
+    // Trade Chain Wallet
     // ============================================================
     /// Get swap quote (estimated output)
     Quote {
@@ -421,7 +423,7 @@ enum Commands {
         #[arg(long)]
         use_mev: bool,
     },
-    /// One-step EVM swap: create + sign + send
+    /// One-step EVM swap: create + sign + send (requires AVE_EVM_PRIVATE_KEY)
     SwapEvm {
         #[arg(long, required = true)]
         chain: String,
@@ -446,7 +448,7 @@ enum Commands {
         #[arg(long)]
         rpc_url: Option<String>,
     },
-    /// One-step Solana swap: create + sign + send
+    /// One-step Solana swap: create + sign + send (requires AVE_SOLANA_PRIVATE_KEY)
     SwapSolana {
         #[arg(long, required = true)]
         in_amount: String,
@@ -471,7 +473,7 @@ enum Commands {
     },
 
     // ============================================================
-    // Trade Proxy Wallet Commands (Phase 4)
+    // Trade Proxy Wallet
     // ============================================================
     /// List proxy wallets
     ListWallets {
@@ -487,10 +489,10 @@ enum Commands {
     },
     /// Delete delegate proxy wallets
     DeleteWallet {
-        #[arg(long, required = true)]
+        #[arg(long, required = true, num_args = 1..)]
         assets_ids: Vec<String>,
     },
-    /// Place a market swap order
+    /// Place a market swap order (proxy wallet)
     MarketOrder {
         #[arg(long, required = true)]
         chain: String,
@@ -519,7 +521,7 @@ enum Commands {
         #[arg(long)]
         auto_sell: Option<Vec<String>>,
     },
-    /// Place a limit order
+    /// Place a limit order (proxy wallet)
     LimitOrder {
         #[arg(long, required = true)]
         chain: String,
@@ -576,7 +578,7 @@ enum Commands {
     CancelLimitOrder {
         #[arg(long, required = true)]
         chain: String,
-        #[arg(long, required = true)]
+        #[arg(long, required = true, num_args = 1..)]
         ids: Vec<String>,
     },
     /// Approve token for EVM proxy wallet trading
@@ -621,15 +623,42 @@ enum Commands {
         #[arg(long, required = true)]
         ids: String,
     },
+    /// Simple buy via proxy wallet (requires Normal/Pro plan)
+    Buy {
+        chain: String,
+        token: String,
+        amount_usd: f64,
+        #[arg(long, help = "Perform honeypot check before buying")]
+        safe: bool,
+        #[arg(long, help = "Take profit price")]
+        tp: Option<f64>,
+        #[arg(long, help = "Stop loss price")]
+        sl: Option<f64>,
+    },
+    /// Simple sell via proxy wallet (requires Normal/Pro plan)
+    Sell {
+        chain: String,
+        token: String,
+        amount_usd: f64,
+    },
+    /// List proxy orders (market swap orders)
+    Orders {
+        #[arg(long, required = true)]
+        chain: String,
+        #[arg(long, required = true, help = "Your proxy wallet assetsId")]
+        assets_id: String,
+        #[arg(long)]
+        status: Option<String>,
+    },
 
     // ============================================================
-    // Data WSS Commands (Phase 2)
+    // Data WSS — WebSocket Streams (requires Pro plan)
     // ============================================================
     /// Interactive WebSocket REPL (pro plan)
     WssRepl,
-    /// Stream live price updates (pro plan)
+    /// Stream live price updates for tokens (pro plan)
     WatchPrice {
-        #[arg(long, required = true)]
+        #[arg(long, required = true, num_args = 1..)]
         tokens: Vec<String>,
     },
     /// Stream live kline updates (pro plan)
@@ -652,13 +681,31 @@ enum Commands {
         #[arg(long, default_value = "tx")]
         topic: String,
     },
+    /// Stream WebSocket (daemon mode)
+    Daemon {
+        #[arg(long, default_value = "data-wss")]
+        skill: String,
+    },
+    /// Stream real-time price updates (pro plan, legacy alias)
+    StreamPrice {
+        chain: String,
+        address: String,
+    },
+    /// Stream real-time transactions (pro plan, legacy alias)
+    StreamTx {
+        chain: String,
+        address: String,
+    },
 }
+
+// ============================================================
+// Main
+// ============================================================
 
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
 
-    // Setup logging
     let log_level = match cli.log_level.to_lowercase().as_str() {
         "trace" => Level::TRACE,
         "debug" => Level::DEBUG,
@@ -668,18 +715,19 @@ async fn main() {
         _ => Level::INFO,
     };
 
+    // All logs go to stderr — stdout is reserved for data (matches Python)
     let subscriber = FmtSubscriber::builder()
         .with_max_level(log_level)
         .with_target(false)
         .with_thread_ids(false)
         .with_file(false)
         .with_line_number(false)
+        .with_writer(std::io::stderr)
         .compact()
         .finish();
 
     tracing::subscriber::set_global_default(subscriber).expect("Failed to set tracing subscriber");
 
-    // Load config
     let config = match Config::from_env() {
         Ok(c) => c,
         Err(e) => {
@@ -688,129 +736,677 @@ async fn main() {
         }
     };
 
-    // Execute command
     if let Err(e) = execute_command(cli, config).await {
         eprintln!("Error: {}", e);
         std::process::exit(1);
     }
 }
 
+// ============================================================
+// Command Execution
+// All data commands output raw API JSON to stdout (matches Python)
+// ============================================================
+
 async fn execute_command(cli: Cli, config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let client = AveClient::new(config.clone())?;
-    let data_v2 = DataApiV2::new(&client);
-    let trade_api = TradeRestApi::new(&client);
-    let proxy_api = ProxyWalletApi::new(&client);
+
+    // Helper: print raw API response exactly as Python does
+    // Python: print(json.dumps(resp.json(), indent=2))
+    macro_rules! out {
+        ($val:expr) => {
+            println!("{}", serde_json::to_string_pretty($val)?)
+        };
+    }
 
     match cli.command {
         // ============================================================
-        // Data REST v1 Commands
+        // Data REST v2 — Token Queries
         // ============================================================
+        Commands::Search { query, chain, limit, orderby } => {
+            let mut params: Vec<(String, String)> = vec![
+                ("keyword".to_string(), query),
+                ("limit".to_string(), limit.to_string()),
+            ];
+            if let Some(c) = chain {
+                params.push(("chain".to_string(), c));
+            }
+            if let Some(o) = orderby {
+                params.push(("orderby".to_string(), o));
+            }
+            let raw = client.get_v2_raw("/tokens", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::SearchDetails { tokens } => {
+            let body = serde_json::json!({ "token_ids": tokens });
+            let raw = client.post_v2_raw("/tokens/search", body).await?;
+            out!(&raw);
+        }
+
+        Commands::PlatformTokens { platform, limit, orderby } => {
+            let mut params: Vec<(String, String)> = vec![("tag".to_string(), platform)];
+            if let Some(l) = limit {
+                params.push(("limit".to_string(), l.to_string()));
+            }
+            if let Some(o) = orderby {
+                params.push(("orderby".to_string(), o));
+            }
+            let raw = client.get_v2_raw("/tokens/platform", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::Token { address, chain } => {
+            let path = format!("/tokens/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let raw = client.get_v2_raw(&path, &[]).await?;
+            out!(&raw);
+        }
+
+        Commands::BatchPrice { tokens, tvl_min, volume_min } => {
+            let mut body = serde_json::json!({ "token_ids": tokens });
+            if let Some(tvl) = tvl_min {
+                body["tvl_min"] = serde_json::json!(tvl);
+            }
+            if let Some(vol) = volume_min {
+                body["tx_24h_volume_min"] = serde_json::json!(vol);
+            }
+            let raw = client.post_v2_raw("/tokens/price", body).await?;
+            out!(&raw);
+        }
+
+        // shorthand: price <chain> <address>
         Commands::Price { chain, address } => {
-            let price = client.data().token_price(&chain, &address).await?;
-            if cli.json {
-                println!("{{\"price\": {}}}", price);
-            } else {
-                println!("Token: {} on {}", address, chain);
-                println!("Price: ${}", price);
-            }
+            let body = serde_json::json!({
+                "token_ids": [format!("{}-{}", address.to_lowercase(), chain.to_lowercase())]
+            });
+            let raw = client.post_v2_raw("/tokens/price", body).await?;
+            out!(&raw);
         }
+
+        // shorthand: info <chain> <address>
         Commands::Info { chain, address } => {
-            let info = client.data().token_info(&chain, &address).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&info)?);
-            } else {
-                println!("Token: {} ({})", info.name, info.symbol);
-                println!("Chain: {}", info.chain);
-                if let Some(price) = info.price_usd {
-                    println!("Price: ${}", price);
-                }
-                if let Some(mcap) = info.market_cap {
-                    println!("Market Cap: ${}", mcap);
-                }
-                if let Some(vol) = info.volume_24h {
-                    println!("24h Volume: ${}", vol);
-                }
-                if let Some(h) = info.holder_count {
-                    println!("Holders: {}", h);
-                }
-            }
+            let path = format!("/tokens/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let raw = client.get_v2_raw(&path, &[]).await?;
+            out!(&raw);
         }
-        Commands::Kline {
-            chain,
-            address,
-            interval,
-            limit,
-        } => {
-            let data = client
-                .data()
-                .kline(&chain, &address, &interval, limit)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&data)?);
-            } else {
-                for k in data {
-                    println!(
-                        "{} | O:{:.6} H:{:.6} L:{:.6} C:{:.6} V:{:.2}",
-                        k.timestamp, k.open, k.high, k.low, k.close, k.volume
-                    );
-                }
-            }
+
+        Commands::Top100 { address, chain } => {
+            let path = format!("/tokens/top100/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let raw = client.get_v2_raw(&path, &[]).await?;
+            out!(&raw);
         }
+
+        Commands::Holders { address, chain, limit, sort_by, order } => {
+            let mut params: Vec<(String, String)> = vec![];
+            if let Some(l) = limit {
+                params.push(("limit".to_string(), l.to_string()));
+            }
+            if let Some(s) = sort_by {
+                params.push(("sort_by".to_string(), s));
+            }
+            if let Some(o) = order {
+                params.push(("order".to_string(), o));
+            }
+            let path = format!("/tokens/holders/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let raw = client.get_v2_raw(&path, &params).await?;
+            out!(&raw);
+        }
+
+        // ============================================================
+        // Kline
+        // ============================================================
+        Commands::KlineToken { address, chain, interval, limit } => {
+            let path = format!("/klines/token/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let params = vec![
+                ("interval".to_string(), interval.to_string()),
+                ("limit".to_string(), limit.to_string()),
+            ];
+            let raw = client.get_v2_raw(&path, &params).await?;
+            out!(&raw);
+        }
+
+        Commands::KlinePair { address, chain, interval, limit } => {
+            let path = format!("/klines/pair/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let params = vec![
+                ("interval".to_string(), interval.to_string()),
+                ("limit".to_string(), limit.to_string()),
+            ];
+            let raw = client.get_v2_raw(&path, &params).await?;
+            out!(&raw);
+        }
+
+        Commands::KlineOndo { pair, interval, limit, from_time, to_time } => {
+            let mut params = vec![
+                ("interval".to_string(), interval.to_string()),
+                ("limit".to_string(), limit.to_string()),
+            ];
+            if let Some(t) = from_time {
+                params.push(("from_time".to_string(), t.to_string()));
+            }
+            if let Some(t) = to_time {
+                params.push(("to_time".to_string(), t.to_string()));
+            }
+            let path = format!("/klines/pair/ondo/{}", pair);
+            let raw = client.get_v2_raw(&path, &params).await?;
+            out!(&raw);
+        }
+
+        Commands::Kline { chain, address, interval, limit } => {
+            let path = format!("/klines/token/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let params = vec![
+                ("interval".to_string(), interval.to_string()),
+                ("limit".to_string(), limit.to_string()),
+            ];
+            let raw = client.get_v2_raw(&path, &params).await?;
+            out!(&raw);
+        }
+
+        // ============================================================
+        // Market / Rankings
+        // ============================================================
+        Commands::Trending { chain, page, page_size } => {
+            let params = vec![
+                ("chain".to_string(), chain),
+                ("current_page".to_string(), page.to_string()),
+                ("page_size".to_string(), page_size.to_string()),
+            ];
+            let raw = client.get_v2_raw("/tokens/trending", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::RankTopics => {
+            let raw = client.get_v2_raw("/ranks/topics", &[]).await?;
+            out!(&raw);
+        }
+
+        Commands::Ranks { topic } => {
+            let params = vec![("topic".to_string(), topic)];
+            let raw = client.get_v2_raw("/ranks", &params).await?;
+            out!(&raw);
+        }
+
         Commands::Risk { chain, address } => {
-            let risk = client.data().risk_check(&chain, &address).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&risk)?);
+            let path = format!("/contracts/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let raw = client.get_v2_raw(&path, &[]).await?;
+            out!(&raw);
+        }
+
+        Commands::Chains => {
+            let raw = client.get_v2_raw("/supported_chains", &[]).await?;
+            out!(&raw);
+        }
+
+        Commands::MainTokens { chain } => {
+            let params = vec![("chain".to_string(), chain)];
+            let raw = client.get_v2_raw("/tokens/main", &params).await?;
+            out!(&raw);
+        }
+
+        // ============================================================
+        // Wallet / Address
+        // ============================================================
+        Commands::AddressTxs { wallet, chain, token, from_time, last_time, last_id, page_size } => {
+            let mut params = vec![
+                ("wallet_address".to_string(), wallet),
+                ("chain".to_string(), chain),
+            ];
+            if let Some(t) = token {
+                params.push(("token_address".to_string(), t));
+            }
+            if let Some(t) = from_time {
+                params.push(("from_time".to_string(), t.to_string()));
+            }
+            if let Some(t) = last_time {
+                params.push(("last_time".to_string(), t));
+            }
+            if let Some(id) = last_id {
+                params.push(("last_id".to_string(), id));
+            }
+            if let Some(s) = page_size {
+                params.push(("page_size".to_string(), s.to_string()));
+            }
+            let raw = client.get_v2_raw("/address/tx", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::AddressPnl { wallet, chain, token } => {
+            let params = vec![
+                ("wallet_address".to_string(), wallet),
+                ("chain".to_string(), chain),
+                ("token_address".to_string(), token),
+            ];
+            let raw = client.get_v2_raw("/address/pnl", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::WalletTokens {
+            wallet, chain, sort, sort_dir, page_size, page_no, hide_sold, hide_small, blue_chips,
+        } => {
+            let mut params = vec![
+                ("wallet_address".to_string(), wallet),
+                ("chain".to_string(), chain),
+            ];
+            if let Some(s) = sort { params.push(("sort".to_string(), s)); }
+            if let Some(d) = sort_dir { params.push(("sort_dir".to_string(), d)); }
+            if let Some(s) = page_size { params.push(("pageSize".to_string(), s.to_string())); }
+            if let Some(n) = page_no { params.push(("pageNO".to_string(), n.to_string())); }
+            if hide_sold { params.push(("hide_sold".to_string(), "1".to_string())); }
+            if let Some(h) = hide_small { params.push(("hide_small".to_string(), h.to_string())); }
+            if blue_chips { params.push(("blue_chips".to_string(), "1".to_string())); }
+            let raw = client.get_v2_raw("/address/walletinfo/tokens", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::WalletInfo { wallet, chain, self_address } => {
+            let mut params = vec![
+                ("wallet_address".to_string(), wallet),
+                ("chain".to_string(), chain),
+            ];
+            if let Some(a) = self_address { params.push(("self_address".to_string(), a)); }
+            let raw = client.get_v2_raw("/address/walletinfo", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::SmartWallets { chain, keyword, sort, sort_dir } => {
+            let mut params = vec![("chain".to_string(), chain)];
+            if let Some(k) = keyword { params.push(("keyword".to_string(), k)); }
+            if let Some(s) = sort { params.push(("sort".to_string(), s)); }
+            if let Some(d) = sort_dir { params.push(("sort_dir".to_string(), d)); }
+            let raw = client.get_v2_raw("/address/smart_wallet/list", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::Signals { chain, page_size, page_no } => {
+            let mut params = vec![
+                ("chain".to_string(), chain.unwrap_or_else(|| "solana".to_string())),
+            ];
+            if let Some(s) = page_size { params.push(("pageSize".to_string(), s.to_string())); }
+            if let Some(n) = page_no { params.push(("pageNO".to_string(), n.to_string())); }
+            let raw = client.get_v2_raw("/signals/public/list", &params).await?;
+            out!(&raw);
+        }
+
+        // ============================================================
+        // Transactions
+        // ============================================================
+        Commands::Txs { address, chain } => {
+            let path = format!("/txs/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let raw = client.get_v2_raw(&path, &[]).await?;
+            out!(&raw);
+        }
+
+        Commands::LiqTxs { address, chain, type_, limit, from_time, to_time, sort } => {
+            let mut params: Vec<(String, String)> = vec![];
+            if let Some(t) = type_ { params.push(("type".to_string(), t)); }
+            if let Some(l) = limit { params.push(("limit".to_string(), l.to_string())); }
+            if let Some(t) = from_time { params.push(("from_time".to_string(), t.to_string())); }
+            if let Some(t) = to_time { params.push(("to_time".to_string(), t.to_string())); }
+            if let Some(s) = sort { params.push(("sort".to_string(), s)); }
+            let path = format!("/txs/liq/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let raw = client.get_v2_raw(&path, &params).await?;
+            out!(&raw);
+        }
+
+        Commands::TxDetail { chain, account, tx_hash, start_from, end_at, limit } => {
+            let mut params = vec![
+                ("chain".to_string(), chain),
+                ("account_address".to_string(), account),
+                ("tx_hash".to_string(), tx_hash),
+            ];
+            if let Some(t) = start_from { params.push(("start_from".to_string(), t.to_string())); }
+            if let Some(t) = end_at { params.push(("end_at".to_string(), t.to_string())); }
+            if let Some(l) = limit { params.push(("limit".to_string(), l.to_string())); }
+            let raw = client.get_v2_raw("/txs/detail", &params).await?;
+            out!(&raw);
+        }
+
+        Commands::Pair { address, chain } => {
+            let path = format!("/pairs/{}-{}", address.to_lowercase(), chain.to_lowercase());
+            let raw = client.get_v2_raw(&path, &[]).await?;
+            out!(&raw);
+        }
+
+        // ============================================================
+        // Trade Chain Wallet
+        // ============================================================
+        Commands::Quote { chain, in_amount, in_token, out_token, swap_type } => {
+            let body = serde_json::json!({
+                "chain": chain,
+                "inAmount": in_amount,
+                "inTokenAddress": in_token,
+                "outTokenAddress": out_token,
+                "swapType": swap_type,
+            });
+            let raw = client.trade_post_raw("/v1/thirdParty/chainWallet/getAmountOut", body, false).await?;
+            out!(&raw);
+        }
+
+        Commands::AutoSlippage { chain, token, use_mev } => {
+            let body = serde_json::json!({
+                "chain": chain,
+                "tokenAddress": token,
+                "useMev": use_mev,
+            });
+            let raw = client.trade_post_raw("/v1/thirdParty/chainWallet/getAutoSlippage", body, false).await?;
+            out!(&raw);
+        }
+
+        Commands::GasTip => {
+            let raw = client.trade_get_raw("/v1/thirdParty/chainWallet/getGasTip", &[], false).await?;
+            out!(&raw);
+        }
+
+        Commands::ApproveChain { chain, token, in_amount, rpc_url: _ } => {
+            // Returns the spender address from a quote so the user can approve it
+            let body = serde_json::json!({
+                "chain": chain,
+                "inAmount": in_amount.unwrap_or_else(|| "1000000000000000000".to_string()),
+                "inTokenAddress": token,
+                "outTokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "swapType": "sell",
+            });
+            let raw = client.trade_post_raw("/v1/thirdParty/chainWallet/getAmountOut", body, false).await?;
+            out!(&raw);
+        }
+
+        Commands::CreateEvmTx {
+            chain, creator_address, in_amount, in_token, out_token,
+            swap_type, slippage, fee_recipient, fee_recipient_rate, auto_slippage,
+        } => {
+            let mut body = serde_json::json!({
+                "chain": chain,
+                "creatorAddress": creator_address,
+                "inAmount": in_amount,
+                "inTokenAddress": in_token,
+                "outTokenAddress": out_token,
+                "swapType": swap_type,
+                "slippage": slippage,
+            });
+            if let Some(r) = fee_recipient { body["feeRecipient"] = serde_json::json!(r); }
+            if let Some(r) = fee_recipient_rate { body["feeRecipientRate"] = serde_json::json!(r); }
+            if auto_slippage { body["autoSlippage"] = serde_json::json!(true); }
+            let raw = client.trade_post_raw("/v1/thirdParty/chainWallet/createEvmTx", body, false).await?;
+            out!(&raw);
+        }
+
+        Commands::SendEvmTx { chain, request_tx_id, signed_tx, use_mev } => {
+            let mut body = serde_json::json!({
+                "chain": chain,
+                "requestTxId": request_tx_id,
+                "signedTx": signed_tx,
+            });
+            if use_mev { body["useMev"] = serde_json::json!(true); }
+            let raw = client.trade_post_raw("/v1/thirdParty/chainWallet/sendSignedEvmTx", body, false).await?;
+            out!(&raw);
+        }
+
+        Commands::CreateSolanaTx {
+            creator_address, in_amount, in_token, out_token, swap_type,
+            slippage, fee, use_mev, fee_recipient, fee_recipient_rate, auto_slippage,
+        } => {
+            let mut body = serde_json::json!({
+                "creatorAddress": creator_address,
+                "inAmount": in_amount,
+                "inTokenAddress": in_token,
+                "outTokenAddress": out_token,
+                "swapType": swap_type,
+                "slippage": slippage,
+                "fee": fee,
+            });
+            if use_mev { body["useMev"] = serde_json::json!(true); }
+            if let Some(r) = fee_recipient { body["feeRecipient"] = serde_json::json!(r); }
+            if let Some(r) = fee_recipient_rate { body["feeRecipientRate"] = serde_json::json!(r); }
+            if auto_slippage { body["autoSlippage"] = serde_json::json!(true); }
+            let raw = client.trade_post_raw("/v1/thirdParty/chainWallet/createSolanaTx", body, false).await?;
+            out!(&raw);
+        }
+
+        Commands::SendSolanaTx { request_tx_id, signed_tx, use_mev } => {
+            let mut body = serde_json::json!({
+                "requestTxId": request_tx_id,
+                "signedTx": signed_tx,
+            });
+            if use_mev { body["useMev"] = serde_json::json!(true); }
+            let raw = client.trade_post_raw("/v1/thirdParty/chainWallet/sendSignedSolanaTx", body, false).await?;
+            out!(&raw);
+        }
+
+        Commands::SwapEvm { .. } => {
+            return Err("swap-evm requires local EVM private key (AVE_EVM_PRIVATE_KEY). Use create-evm-tx then sign-and-send-evm-tx separately.".into());
+        }
+
+        Commands::SwapSolana { .. } => {
+            return Err("swap-solana requires local Solana private key (AVE_SOLANA_PRIVATE_KEY). Use create-solana-tx then sign-and-send-solana-tx separately.".into());
+        }
+
+        // ============================================================
+        // Trade Proxy Wallet
+        // ============================================================
+        Commands::ListWallets { assets_ids } => {
+            let params: Vec<(String, String)> = if let Some(ids) = assets_ids {
+                vec![("assetsIds".to_string(), ids)]
             } else {
-                println!("Token: {}", address);
-                println!("Honeypot: {}", if risk.is_honeypot { "YES" } else { "NO" });
-                println!("Risk Level: {}/100", risk.risk_level);
-                println!("Can Buy: {}", risk.can_buy);
-                println!("Can Sell: {}", risk.can_sell);
-                println!("Buy Tax: {}%", risk.buy_tax);
-                println!("Sell Tax: {}%", risk.sell_tax);
-                if !risk.flags.is_empty() {
-                    println!("Flags: {:?}", risk.flags);
-                }
-            }
+                vec![]
+            };
+            let raw = client.trade_get_raw("/v1/thirdParty/user/getUserByAssetsId", &params, true).await?;
+            out!(&raw);
         }
-        Commands::Search { query, chain } => {
-            let results = client.data().search(&query, chain.as_deref()).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&results)?);
-            } else {
-                for token in results {
-                    println!(
-                        "{} ({}): {} - {}",
-                        token.symbol, token.chain, token.address, token.name
-                    );
-                }
-            }
+
+        Commands::CreateWallet { name, return_mnemonic } => {
+            let mut body = serde_json::json!({ "assetsName": name });
+            if return_mnemonic { body["returnMnemonic"] = serde_json::json!(true); }
+            let raw = client.trade_post_raw("/v1/thirdParty/user/generateWallet", body, true).await?;
+            out!(&raw);
         }
-        Commands::StreamPrice { chain, address } => {
-            info!("Starting price stream for {} on {}", address, chain);
-            let mut wss = ws::DataWss::new(&config)?;
-            wss.subscribe_price(&chain, &address);
-            let mut rx = wss.stream_typed().await?;
-            while let Some(event) = rx.recv().await {
-                if let ws::WsEvent::Price(p) = event {
-                    println!("{}: ${}", p.token, p.price);
-                }
-            }
+
+        Commands::DeleteWallet { assets_ids } => {
+            let body = serde_json::json!({ "assetsIds": assets_ids });
+            let raw = client.trade_post_raw("/v1/thirdParty/user/deleteWallet", body, true).await?;
+            out!(&raw);
         }
-        Commands::StreamTx { chain, address } => {
-            info!("Starting tx stream for {} on {}", address, chain);
-            let mut wss = ws::DataWss::new(&config)?;
-            wss.subscribe_txs(&chain, &address);
-            let mut rx = wss.stream_typed().await?;
-            while let Some(event) = rx.recv().await {
-                if let ws::WsEvent::Tx(p) = event {
-                    println!(
-                        "Tx: {} - {:?} {} for {} USD",
-                        p.tx.tx_hash, p.tx.side, p.tx.amount_token, p.tx.amount_usd
-                    );
-                }
+
+        Commands::MarketOrder {
+            chain, assets_id, in_token, out_token, in_amount, swap_type,
+            slippage, use_mev, gas, extra_gas, auto_slippage, auto_gas, auto_sell,
+        } => {
+            let mut body = serde_json::json!({
+                "chain": chain,
+                "assetsId": assets_id,
+                "inTokenAddress": in_token,
+                "outTokenAddress": out_token,
+                "inAmount": in_amount,
+                "swapType": swap_type,
+                "slippage": slippage,
+                "useMev": use_mev,
+            });
+            if let Some(g) = gas { body["gas"] = serde_json::json!(g); }
+            if let Some(g) = extra_gas { body["extraGas"] = serde_json::json!(g); }
+            if auto_slippage { body["autoSlippage"] = serde_json::json!(true); }
+            if let Some(a) = auto_gas { body["autoGas"] = serde_json::json!(a); }
+            if let Some(c) = auto_sell {
+                let parsed: Vec<serde_json::Value> = c.iter()
+                    .filter_map(|s| serde_json::from_str(s).ok())
+                    .collect();
+                body["autoSellConfig"] = serde_json::json!(parsed);
             }
+            let raw = client.trade_post_raw("/v1/thirdParty/tx/sendSwapOrder", body, true).await?;
+            out!(&raw);
         }
+
+        Commands::LimitOrder {
+            chain, assets_id, in_token, out_token, in_amount, swap_type,
+            slippage, limit_price, use_mev, gas, extra_gas, expire_time, auto_slippage, auto_gas,
+        } => {
+            let mut body = serde_json::json!({
+                "chain": chain,
+                "assetsId": assets_id,
+                "inTokenAddress": in_token,
+                "outTokenAddress": out_token,
+                "inAmount": in_amount,
+                "swapType": swap_type,
+                "slippage": slippage,
+                "limitPrice": limit_price,
+                "useMev": use_mev,
+            });
+            if let Some(g) = gas { body["gas"] = serde_json::json!(g); }
+            if let Some(g) = extra_gas { body["extraGas"] = serde_json::json!(g); }
+            if let Some(e) = expire_time { body["expireTime"] = serde_json::json!(e); }
+            if auto_slippage { body["autoSlippage"] = serde_json::json!(true); }
+            if let Some(a) = auto_gas { body["autoGas"] = serde_json::json!(a); }
+            let raw = client.trade_post_raw("/v1/thirdParty/tx/sendLimitOrder", body, true).await?;
+            out!(&raw);
+        }
+
+        Commands::GetSwapOrders { chain, ids } => {
+            let params = vec![
+                ("chain".to_string(), chain),
+                ("ids".to_string(), ids),
+            ];
+            let raw = client.trade_get_raw("/v1/thirdParty/tx/getSwapOrder", &params, true).await?;
+            out!(&raw);
+        }
+
+        Commands::GetLimitOrders { chain, assets_id, page_size, page_no, status, token } => {
+            let mut params = vec![
+                ("chain".to_string(), chain),
+                ("assetsId".to_string(), assets_id),
+                ("pageSize".to_string(), page_size.to_string()),
+                ("pageNo".to_string(), page_no.to_string()),
+            ];
+            if let Some(s) = status { params.push(("status".to_string(), s)); }
+            if let Some(t) = token { params.push(("token".to_string(), t)); }
+            let raw = client.trade_get_raw("/v1/thirdParty/tx/getLimitOrder", &params, true).await?;
+            out!(&raw);
+        }
+
+        Commands::CancelLimitOrder { chain, ids } => {
+            let body = serde_json::json!({ "chain": chain, "ids": ids });
+            let raw = client.trade_post_raw("/v1/thirdParty/tx/cancelLimitOrder", body, true).await?;
+            out!(&raw);
+        }
+
+        Commands::ApproveToken { chain, assets_id, token_address } => {
+            let body = serde_json::json!({
+                "chain": chain,
+                "assetsId": assets_id,
+                "tokenAddress": token_address,
+            });
+            let raw = client.trade_post_raw("/v1/thirdParty/tx/approve", body, true).await?;
+            out!(&raw);
+        }
+
+        Commands::GetApproval { chain, ids } => {
+            let params = vec![
+                ("chain".to_string(), chain),
+                ("ids".to_string(), ids),
+            ];
+            let raw = client.trade_get_raw("/v1/thirdParty/tx/getApprove", &params, true).await?;
+            out!(&raw);
+        }
+
+        Commands::Transfer { chain, assets_id, from_address, to_address, token_address, amount, gas, extra_gas } => {
+            let mut body = serde_json::json!({
+                "chain": chain,
+                "assetsId": assets_id,
+                "fromAddress": from_address,
+                "toAddress": to_address,
+                "tokenAddress": token_address,
+                "amount": amount,
+            });
+            if let Some(g) = gas { body["gas"] = serde_json::json!(g); }
+            if let Some(g) = extra_gas { body["extraGas"] = serde_json::json!(g); }
+            let raw = client.trade_post_raw("/v1/thirdParty/tx/transfer", body, true).await?;
+            out!(&raw);
+        }
+
+        Commands::GetTransfer { chain, ids } => {
+            let params = vec![
+                ("chain".to_string(), chain),
+                ("ids".to_string(), ids),
+            ];
+            let raw = client.trade_get_raw("/v1/thirdParty/tx/getTransfer", &params, true).await?;
+            out!(&raw);
+        }
+
+        // ============================================================
+        // Simple High-Level Proxy Wallet (Buy/Sell/Orders)
+        // ============================================================
+        Commands::Buy { chain, token, amount_usd, safe, tp, sl } => {
+            if safe {
+                let path = format!("/contracts/{}-{}", token.to_lowercase(), chain.to_lowercase());
+                let raw = client.get_v2_raw(&path, &[]).await?;
+                if let Some(data) = raw.get("data") {
+                    let is_honeypot = data.get("is_honeypot")
+                        .and_then(|v| v.as_bool())
+                        .unwrap_or(false);
+                    if is_honeypot {
+                        warn!("Token {} is flagged as HONEYPOT!", token);
+                        return Err("Refusing to buy honeypot token".into());
+                    }
+                }
+                info!("Risk check passed, placing buy order...");
+            }
+
+            let mut body = serde_json::json!({
+                "chain": chain,
+                "inTokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "outTokenAddress": token,
+                "inAmount": (amount_usd * 1e18) as u64,
+                "swapType": "buy",
+                "slippage": "100",
+            });
+            if let Some(tp_price) = tp { body["tpPrice"] = serde_json::json!(tp_price); }
+            if let Some(sl_price) = sl { body["slPrice"] = serde_json::json!(sl_price); }
+            let raw = client.trade_post_raw("/v1/thirdParty/tx/sendSwapOrder", body, true).await?;
+            out!(&raw);
+        }
+
+        Commands::Sell { chain, token, amount_usd } => {
+            let body = serde_json::json!({
+                "chain": chain,
+                "inTokenAddress": token,
+                "outTokenAddress": "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+                "inAmount": (amount_usd * 1e18) as u64,
+                "swapType": "sell",
+                "slippage": "100",
+            });
+            let raw = client.trade_post_raw("/v1/thirdParty/tx/sendSwapOrder", body, true).await?;
+            out!(&raw);
+        }
+
+        Commands::Orders { chain, assets_id, status } => {
+            let mut params: Vec<(String, String)> = vec![
+                ("chain".to_string(), chain),
+                ("assetsId".to_string(), assets_id),
+                ("pageSize".to_string(), "20".to_string()),
+                ("pageNo".to_string(), "1".to_string()),
+            ];
+            if let Some(s) = status {
+                params.push(("status".to_string(), s));
+            }
+            let raw = client.trade_get_raw("/v1/thirdParty/tx/getLimitOrder", &params, true).await?;
+            out!(&raw);
+        }
+
+        // ============================================================
+        // WebSocket Commands
+        // ============================================================
+        Commands::WssRepl => {
+            ws::run_repl(&config).await?;
+        }
+
+        Commands::WatchPrice { tokens } => {
+            ws::watch_price(&config, tokens).await?;
+        }
+
+        Commands::WatchKline { address, chain, interval, format } => {
+            let format_markdown = format.as_deref() == Some("markdown");
+            ws::watch_kline(&config, &address, &chain, &interval, format_markdown).await?;
+        }
+
+        Commands::WatchTx { address, chain, topic } => {
+            ws::watch_tx(&config, &address, &chain, &topic).await?;
+        }
+
         Commands::Daemon { skill } => {
             info!("Starting daemon for skill: {}", skill);
             if skill == "data-wss" {
@@ -820,1060 +1416,35 @@ async fn execute_command(cli: Cli, config: Config) -> Result<(), Box<dyn std::er
                 let wss = ws::TradeWss::new(&config)?;
                 let mut rx = wss.watch_orders().await?;
                 while let Some(order) = rx.recv().await {
-                    println!("Order update: {} - {:?}", order.order_id, order.status);
+                    println!("{}", serde_json::to_string_pretty(&order)?);
                 }
             } else {
                 return Err(format!("Unknown skill: {}", skill).into());
             }
         }
-        Commands::Buy {
-            chain,
-            token,
-            amount_usd,
-            safe,
-            tp,
-            sl,
-        } => {
-            let wallet = trade::ProxyWallet::new(&client)?;
-            if safe {
-                let risk = client.data().risk_check(&chain, &token).await?;
-                if risk.is_honeypot {
-                    warn!("Token {} is flagged as HONEYPOT!", token);
-                    return Err("Refusing to buy honeypot token".into());
-                }
-                if risk.risk_level > 70 {
-                    warn!("Token {} has high risk level: {}", token, risk.risk_level);
-                }
-                info!("Risk check passed, placing buy order...");
-            }
-            let order = if tp.is_some() || sl.is_some() {
-                wallet
-                    .buy_with_tp_sl(
-                        &chain,
-                        &token,
-                        amount_usd,
-                        tp.unwrap_or(0.0),
-                        sl.unwrap_or(0.0),
-                    )
-                    .await?
-            } else {
-                wallet.market_buy(&chain, &token, amount_usd).await?
-            };
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&order)?);
-            } else {
-                println!("Order placed: {}", order.order_id);
-                println!("Status: {:?}", order.status);
-            }
-        }
-        Commands::Sell {
-            chain,
-            token,
-            amount_usd,
-        } => {
-            let wallet = trade::ProxyWallet::new(&client)?;
-            let order = wallet.market_sell(&chain, &token, amount_usd).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&order)?);
-            } else {
-                println!("Order placed: {}", order.order_id);
-                println!("Status: {:?}", order.status);
-            }
-        }
-        Commands::Orders { status } => {
-            let wallet = trade::ProxyWallet::new(&client)?;
-            let status_filter = match status.as_deref() {
-                Some("pending") => Some(types::OrderStatus::Pending),
-                Some("filled") => Some(types::OrderStatus::Filled),
-                Some("cancelled") => Some(types::OrderStatus::Cancelled),
-                Some("failed") => Some(types::OrderStatus::Failed),
-                _ => None,
-            };
-            let orders = wallet.list_orders(status_filter).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&orders)?);
-            } else {
-                for order in orders {
-                    println!(
-                        "{} | {:?} | {:?} {} | ${} | {}",
-                        order.order_id,
-                        order.status,
-                        order.side,
-                        order.token_address,
-                        order.amount_usd,
-                        order.created_at
-                    );
+
+        Commands::StreamPrice { chain, address } => {
+            info!("Starting price stream for {} on {}", address, chain);
+            let mut wss = ws::DataWss::new(&config)?;
+            wss.subscribe_price(&chain, &address);
+            let mut rx = wss.stream_typed().await?;
+            while let Some(event) = rx.recv().await {
+                if let ws::WsEvent::Price(p) = event {
+                    println!("{}", serde_json::to_string_pretty(&p)?);
                 }
             }
         }
 
-        // ============================================================
-        // Data REST v2 Commands (Phase 1)
-        // ============================================================
-        Commands::BatchPrice {
-            tokens,
-            tvl_min,
-            volume_min,
-        } => {
-            let token_refs: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
-            let result = data_v2.batch_price(token_refs, tvl_min, volume_min).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Batch Price Results ({} tokens):", result.tokens.len());
-                for item in result.tokens {
-                    println!("{}: ${:?}", item.id, item.price_usd);
+        Commands::StreamTx { chain, address } => {
+            info!("Starting tx stream for {} on {}", address, chain);
+            let mut wss = ws::DataWss::new(&config)?;
+            wss.subscribe_txs(&chain, &address);
+            let mut rx = wss.stream_typed().await?;
+            while let Some(event) = rx.recv().await {
+                if let ws::WsEvent::Tx(p) = event {
+                    println!("{}", serde_json::to_string_pretty(&p)?);
                 }
             }
-        }
-        Commands::SearchDetails { tokens } => {
-            let token_refs: Vec<&str> = tokens.iter().map(|s| s.as_str()).collect();
-            let result = data_v2.search_details(token_refs).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for token in result {
-                    println!(
-                        "{} ({}): {} - {}",
-                        token.symbol, token.chain, token.address, token.name
-                    );
-                }
-            }
-        }
-        Commands::KlineToken {
-            address,
-            chain,
-            interval,
-            size,
-        } => {
-            let result = data_v2
-                .kline_token(&chain, &address, interval, size, None, None, None)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for k in result.points {
-                    println!(
-                        "{} | O:{:.6} H:{:.6} L:{:.6} C:{:.6} V:{:.2}",
-                        k.timestamp, k.open, k.high, k.low, k.close, k.volume
-                    );
-                }
-            }
-        }
-        Commands::KlinePair {
-            address,
-            chain,
-            interval,
-            size,
-        } => {
-            let result = data_v2
-                .kline_pair(&chain, &address, interval, size, None, None, None)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for k in result.points {
-                    println!(
-                        "{} | O:{:.6} H:{:.6} L:{:.6} C:{:.6} V:{:.2}",
-                        k.timestamp, k.open, k.high, k.low, k.close, k.volume
-                    );
-                }
-            }
-        }
-        Commands::KlineOndo {
-            pair,
-            interval,
-            size,
-            from_time,
-            to_time,
-        } => {
-            let result = data_v2
-                .kline_ondo(&pair, interval, size, from_time, to_time)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for k in result.points {
-                    println!(
-                        "{} | O:{:.6} H:{:.6} L:{:.6} C:{:.6} V:{:.2}",
-                        k.timestamp, k.open, k.high, k.low, k.close, k.volume
-                    );
-                }
-            }
-        }
-        Commands::Token { address, chain } => {
-            let result = data_v2.token(&chain, &address).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Token: {} ({})", result.name, result.symbol);
-                println!("Chain: {}", result.chain);
-                println!("Address: {}", result.address);
-                if let Some(price) = result.price_usd {
-                    println!("Price: ${}", price);
-                }
-                if let Some(mcap) = result.market_cap {
-                    println!("Market Cap: ${}", mcap);
-                }
-            }
-        }
-        Commands::Holders {
-            address,
-            chain,
-            limit,
-            sort_by,
-            order,
-        } => {
-            let result = data_v2
-                .holders(
-                    &chain,
-                    &address,
-                    limit,
-                    sort_by.as_deref(),
-                    order.as_deref(),
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Holders for {} on {}:", address, chain);
-                for holder in result.iter().take(20) {
-                    println!("{:?}", holder);
-                }
-            }
-        }
-        Commands::Trending {
-            chain,
-            page,
-            page_size,
-        } => {
-            let result = data_v2.trending(&chain, page, page_size).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for token in result {
-                    println!("{} ({}): ${:?}", token.symbol, token.chain, token.price_usd);
-                }
-            }
-        }
-        Commands::RankTopics => {
-            let result = data_v2.rank_topics().await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Available Rank Topics:");
-                for topic in result.topics {
-                    println!("{} - {:?}", topic.id, topic.description);
-                }
-            }
-        }
-        Commands::Ranks { topic } => {
-            let result = data_v2.ranks(&topic).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for token in result {
-                    println!(
-                        "#{:?} {} ({}): ${:?}",
-                        token.rank, token.token.symbol, token.token.chain, token.token.price_usd
-                    );
-                }
-            }
-        }
-        Commands::Chains => {
-            let result = data_v2.chains().await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for chain in result {
-                    println!("{} ({})", chain.name, chain.symbol);
-                }
-            }
-        }
-        Commands::MainTokens { chain } => {
-            let result = data_v2.main_tokens(&chain).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for token in result {
-                    println!("{} ({}) - ${:?}", token.symbol, token.name, token.price_usd);
-                }
-            }
-        }
-        Commands::PlatformTokens {
-            platform,
-            limit,
-            orderby,
-        } => {
-            let result = data_v2
-                .platform_tokens(&platform, limit, orderby.as_deref())
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for token in result {
-                    println!(
-                        "{} ({}) - ${:?}",
-                        token.symbol, token.chain, token.price_usd
-                    );
-                }
-            }
-        }
-        Commands::AddressTxs {
-            wallet,
-            chain,
-            token,
-            from_time,
-            last_time,
-            last_id,
-            page_size,
-        } => {
-            let result = data_v2
-                .address_txs(
-                    &wallet,
-                    &chain,
-                    token.as_deref(),
-                    from_time,
-                    last_time.as_deref(),
-                    last_id.as_deref(),
-                    page_size,
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for tx in result {
-                    println!(
-                        "{} | {:?} | {} {} | ${}",
-                        tx.tx_hash, tx.side, tx.amount_token, tx.token_address, tx.amount_usd
-                    );
-                }
-            }
-        }
-        Commands::AddressPnl {
-            wallet,
-            chain,
-            token,
-        } => {
-            let result = data_v2.address_pnl(&wallet, &chain, &token).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Wallet PnL for {} on {}", wallet, chain);
-                println!(
-                    "Total Bought: {} ${}",
-                    result.total_bought, result.total_bought_usd
-                );
-                println!(
-                    "Total Sold: {} ${}",
-                    result.total_sold, result.total_sold_usd
-                );
-                println!("PnL: ${} ({:.2}%)", result.pnl_usd, result.pnl_percent);
-            }
-        }
-        Commands::WalletTokens {
-            wallet,
-            chain,
-            sort,
-            sort_dir,
-            page_size,
-            page_no,
-            hide_sold,
-            hide_small,
-            blue_chips,
-        } => {
-            let result = data_v2
-                .wallet_tokens(
-                    &wallet,
-                    &chain,
-                    sort.as_deref(),
-                    sort_dir.as_deref(),
-                    page_size,
-                    page_no,
-                    hide_sold,
-                    hide_small,
-                    blue_chips,
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Wallet {} Holdings on {}:", wallet, chain);
-                for token in result {
-                    println!(
-                        "{} ({}): ${:?}",
-                        token.symbol, token.chain, token.balance_usd
-                    );
-                }
-            }
-        }
-        Commands::WalletInfo {
-            wallet,
-            chain,
-            self_address,
-        } => {
-            let result = data_v2
-                .wallet_info(&wallet, &chain, self_address.as_deref())
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Wallet Info for {} on {}", wallet, chain);
-                println!("Total Tokens: {:?}", result.total_tokens);
-                println!("Total Value: ${:?}", result.total_value_usd);
-                println!(
-                    "Total PnL: ${:?} ({:?}%)",
-                    result.total_pnl_usd, result.total_pnl_percent
-                );
-            }
-        }
-        Commands::SmartWallets {
-            chain,
-            keyword,
-            sort,
-            sort_dir,
-        } => {
-            let result = data_v2
-                .smart_wallets(
-                    &chain,
-                    keyword.as_deref(),
-                    sort.as_deref(),
-                    sort_dir.as_deref(),
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                    None,
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Smart Wallets on {}:", chain);
-                for wallet in result {
-                    println!("{}", wallet.address);
-                }
-            }
-        }
-        Commands::Signals {
-            chain,
-            page_size,
-            page_no,
-        } => {
-            let result = data_v2
-                .signals(chain.as_deref(), page_size, page_no)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Trading Signals:");
-                for signal in result {
-                    println!(
-                        "{} on {} - {:?} | Entry: {:?} | Target: {:?}",
-                        signal.token_address,
-                        signal.chain,
-                        signal.signal_type,
-                        signal.entry_price,
-                        signal.target_price
-                    );
-                }
-            }
-        }
-        Commands::Txs { address, chain } => {
-            let result = data_v2.txs(&chain, &address).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for tx in result {
-                    println!(
-                        "{} | {:?} | {} for ${}",
-                        tx.tx_hash, tx.side, tx.amount_token, tx.amount_usd
-                    );
-                }
-            }
-        }
-        Commands::LiqTxs {
-            address,
-            chain,
-            type_,
-            limit,
-            from_time,
-            to_time,
-            sort,
-        } => {
-            let result = data_v2
-                .liq_txs(
-                    &chain,
-                    &address,
-                    type_.as_deref(),
-                    limit,
-                    from_time,
-                    to_time,
-                    sort.as_deref(),
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for tx in result {
-                    println!(
-                        "{} | {:?} | {} {}",
-                        tx.tx_hash, tx.type_, tx.token_a_address, tx.amount_a
-                    );
-                }
-            }
-        }
-        Commands::TxDetail {
-            chain,
-            account,
-            tx_hash,
-            start_from,
-            end_at,
-            limit,
-        } => {
-            let result = data_v2
-                .tx_detail(&chain, &account, &tx_hash, start_from, end_at, limit)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Transaction: {}", result.tx_hash);
-                println!("Chain: {}", result.chain);
-                println!("From: {}", result.from);
-                println!("To: {:?}", result.to);
-                println!("Status: {:?}", result.status);
-            }
-        }
-        Commands::Pair { address, chain } => {
-            let result = data_v2.pair(&chain, &address).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Pair: {}", result.pair_address);
-                println!("Chain: {}", result.chain);
-                println!(
-                    "Base: {} ({})",
-                    result.base_token.symbol, result.base_token.name
-                );
-                println!(
-                    "Quote: {} ({})",
-                    result.quote_token.symbol, result.quote_token.name
-                );
-                println!("Price: ${:?}", result.price_usd);
-                println!("Liquidity: ${:?}", result.liquidity_usd);
-            }
-        }
-
-        // ============================================================
-        // Trade Chain Wallet Commands (Phase 3)
-        // ============================================================
-        Commands::Quote {
-            chain,
-            in_amount,
-            in_token,
-            out_token,
-            swap_type,
-        } => {
-            let result = trade_api
-                .quote(&chain, &in_amount, &in_token, &out_token, &swap_type)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Quote for {} {} -> {}", in_amount, in_token, out_token);
-                println!("Out Amount: {}", result.out_amount);
-                println!("Out Amount Min: {}", result.out_amount_min);
-                println!("Price Impact: {}%", result.price_impact);
-            }
-        }
-        Commands::AutoSlippage {
-            chain,
-            token,
-            use_mev,
-        } => {
-            let result = trade_api.auto_slippage(&chain, &token, use_mev).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!(
-                    "Auto Slippage for {} on {}: {} bps (MEV: {})",
-                    token, chain, result.slippage_bps, result.use_mev
-                );
-            }
-        }
-        Commands::GasTip => {
-            let result = trade_api.gas_tip().await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for tip in result.tips {
-                    println!(
-                        "{}: Low={} | Avg={} | High={} {}",
-                        tip.chain, tip.low, tip.average, tip.high, tip.unit
-                    );
-                }
-            }
-        }
-        Commands::ApproveChain {
-            chain,
-            token,
-            in_amount,
-            rpc_url: _,
-        } => {
-            // This requires local signing - for now just get the spender from quote
-            let quote = trade_api
-                .quote(
-                    &chain,
-                    in_amount.as_deref().unwrap_or("1000000000000000000"),
-                    &token,
-                    "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
-                    "sell",
-                )
-                .await?;
-            if cli.json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(
-                        &serde_json::json!({"spender": quote.spender, "token": token, "chain": chain})
-                    )?
-                );
-            } else {
-                println!("Token: {}", token);
-                println!("Chain: {}", chain);
-                println!("Spender: {:?}", quote.spender);
-                println!("Note: Use your EVM wallet to approve this spender");
-            }
-        }
-        Commands::CreateEvmTx {
-            chain,
-            creator_address,
-            in_amount,
-            in_token,
-            out_token,
-            swap_type,
-            slippage,
-            fee_recipient,
-            fee_recipient_rate,
-            auto_slippage,
-        } => {
-            let result = trade_api
-                .create_evm_tx(
-                    &chain,
-                    &creator_address,
-                    &in_amount,
-                    &in_token,
-                    &out_token,
-                    &swap_type,
-                    &slippage,
-                    fee_recipient.as_deref(),
-                    fee_recipient_rate.as_deref(),
-                    auto_slippage,
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("EVM Transaction Created:");
-                println!("Request Tx ID: {}", result.request_tx_id);
-                println!("Gas Limit: {}", result.gas_limit);
-                println!("To: {}", result.tx_content.to);
-            }
-        }
-        Commands::SendEvmTx {
-            chain,
-            request_tx_id,
-            signed_tx,
-            use_mev,
-        } => {
-            let result = trade_api
-                .send_evm_tx(&chain, &request_tx_id, &signed_tx, use_mev)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Transaction Broadcast:");
-                println!("Tx Hash: {}", result.tx_hash);
-            }
-        }
-        Commands::CreateSolanaTx {
-            creator_address,
-            in_amount,
-            in_token,
-            out_token,
-            swap_type,
-            slippage,
-            fee,
-            use_mev,
-            fee_recipient,
-            fee_recipient_rate,
-            auto_slippage,
-        } => {
-            let result = trade_api
-                .create_solana_tx(
-                    &creator_address,
-                    &in_amount,
-                    &in_token,
-                    &out_token,
-                    &swap_type,
-                    &slippage,
-                    &fee,
-                    use_mev,
-                    fee_recipient.as_deref(),
-                    fee_recipient_rate.as_deref(),
-                    auto_slippage,
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Solana Transaction Created:");
-                println!("Request Tx ID: {}", result.request_tx_id);
-            }
-        }
-        Commands::SendSolanaTx {
-            request_tx_id,
-            signed_tx,
-            use_mev,
-        } => {
-            let result = trade_api
-                .send_solana_tx(&request_tx_id, &signed_tx, use_mev)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Transaction Broadcast:");
-                println!("Tx Hash: {}", result.tx_hash);
-            }
-        }
-        Commands::SwapEvm {
-            chain: _,
-            in_amount: _,
-            in_token: _,
-            out_token: _,
-            swap_type: _,
-            slippage: _,
-            fee_recipient: _,
-            fee_recipient_rate: _,
-            auto_slippage: _,
-            use_mev: _,
-            rpc_url: _,
-        } => {
-            return Err(
-                "swap-evm requires local EVM signing. Use create-evm-tx + send-evm-tx instead."
-                    .into(),
-            );
-        }
-        Commands::SwapSolana {
-            in_amount: _,
-            in_token: _,
-            out_token: _,
-            swap_type: _,
-            slippage: _,
-            fee: _,
-            fee_recipient: _,
-            fee_recipient_rate: _,
-            auto_slippage: _,
-            use_mev: _,
-        } => {
-            return Err("swap-solana requires local Solana signing. Use create-solana-tx + send-solana-tx instead.".into());
-        }
-
-        // ============================================================
-        // Trade Proxy Wallet Commands (Phase 4)
-        // ============================================================
-        Commands::ListWallets { assets_ids } => {
-            let result = proxy_api.list_wallets(assets_ids.as_deref()).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for wallet in result {
-                    println!(
-                        "{} | {} | {} | {:?}",
-                        wallet.assets_id, wallet.assets_name, wallet.address, wallet.status
-                    );
-                }
-            }
-        }
-        Commands::CreateWallet {
-            name,
-            return_mnemonic,
-        } => {
-            let result = proxy_api.create_wallet(&name, return_mnemonic).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Wallet Created:");
-                println!("Assets ID: {}", result.assets_id);
-                println!("Address: {}", result.address);
-                println!("Name: {}", result.assets_name);
-                if let Some(mnemonic) = result.mnemonic {
-                    println!("Mnemonic: {}", mnemonic);
-                }
-            }
-        }
-        Commands::DeleteWallet { assets_ids } => {
-            let asset_refs: Vec<&str> = assets_ids.iter().map(|s| s.as_str()).collect();
-            let result = proxy_api.delete_wallet(asset_refs).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Wallet(s) deleted");
-            }
-        }
-        Commands::MarketOrder {
-            chain,
-            assets_id,
-            in_token,
-            out_token,
-            in_amount,
-            swap_type,
-            slippage,
-            use_mev,
-            gas,
-            extra_gas,
-            auto_slippage,
-            auto_gas,
-            auto_sell,
-        } => {
-            let auto_sell_config: Option<Vec<serde_json::Value>> = auto_sell.map(|v| {
-                v.iter()
-                    .filter_map(|s| serde_json::from_str(s).ok())
-                    .collect()
-            });
-            let result = proxy_api
-                .market_order(
-                    &chain,
-                    &assets_id,
-                    &in_token,
-                    &out_token,
-                    &in_amount,
-                    &swap_type,
-                    &slippage,
-                    use_mev,
-                    gas.as_deref(),
-                    extra_gas.as_deref(),
-                    auto_slippage,
-                    auto_gas.as_deref(),
-                    auto_sell_config,
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Market Order Placed:");
-                println!("Order ID: {}", result.order_id);
-                println!("Status: {}", result.status);
-            }
-        }
-        Commands::LimitOrder {
-            chain,
-            assets_id,
-            in_token,
-            out_token,
-            in_amount,
-            swap_type,
-            slippage,
-            limit_price,
-            use_mev,
-            gas,
-            extra_gas,
-            expire_time,
-            auto_slippage,
-            auto_gas,
-        } => {
-            let result = proxy_api
-                .limit_order(
-                    &chain,
-                    &assets_id,
-                    &in_token,
-                    &out_token,
-                    &in_amount,
-                    &swap_type,
-                    &slippage,
-                    &limit_price,
-                    use_mev,
-                    gas.as_deref(),
-                    extra_gas.as_deref(),
-                    expire_time,
-                    auto_slippage,
-                    auto_gas.as_deref(),
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Limit Order Placed:");
-                println!("Order ID: {}", result.order_id);
-                println!("Status: {}", result.status);
-                println!("Trigger Price: {}", result.trigger_price);
-            }
-        }
-        Commands::GetSwapOrders { chain, ids } => {
-            let result = proxy_api.get_swap_orders(&chain, &ids).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for order in result.orders {
-                    println!(
-                        "{} | {:?} | {} -> {}",
-                        order.order_id, order.status, order.in_token, order.out_token
-                    );
-                }
-            }
-        }
-        Commands::GetLimitOrders {
-            chain,
-            assets_id,
-            page_size,
-            page_no,
-            status,
-            token,
-        } => {
-            let result = proxy_api
-                .get_limit_orders(
-                    &chain,
-                    &assets_id,
-                    page_size,
-                    page_no,
-                    status.as_deref(),
-                    token.as_deref(),
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for order in result.orders {
-                    println!(
-                        "{} | {:?} | {} -> {} | Limit: {}",
-                        order.order_id,
-                        order.status,
-                        order.in_token,
-                        order.out_token,
-                        order.limit_price
-                    );
-                }
-            }
-        }
-        Commands::CancelLimitOrder { chain, ids } => {
-            let id_refs: Vec<&str> = ids.iter().map(|s| s.as_str()).collect();
-            let result = proxy_api.cancel_limit_order(&chain, id_refs).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Limit order(s) cancelled");
-            }
-        }
-        Commands::ApproveToken {
-            chain,
-            assets_id,
-            token_address,
-        } => {
-            let result = proxy_api
-                .approve_token(&chain, &assets_id, &token_address)
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Approval Created:");
-                println!("Approval ID: {}", result.approval_id);
-                println!("Status: {}", result.status);
-                println!("Spender: {}", result.spender);
-            }
-        }
-        Commands::GetApproval { chain, ids } => {
-            let result = proxy_api.get_approval(&chain, &ids).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for approval in result {
-                    println!(
-                        "{} | {:?} | {} | {}",
-                        approval.approval_id,
-                        approval.status,
-                        approval.token_address,
-                        approval.amount
-                    );
-                }
-            }
-        }
-        Commands::Transfer {
-            chain,
-            assets_id,
-            from_address,
-            to_address,
-            token_address,
-            amount,
-            gas,
-            extra_gas,
-        } => {
-            let result = proxy_api
-                .transfer(
-                    &chain,
-                    &assets_id,
-                    &from_address,
-                    &to_address,
-                    &token_address,
-                    &amount,
-                    gas.as_deref(),
-                    extra_gas.as_deref(),
-                )
-                .await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                println!("Transfer Initiated:");
-                println!("Transfer ID: {}", result.transfer_id);
-                println!("Status: {}", result.status);
-            }
-        }
-        Commands::GetTransfer { chain, ids } => {
-            let result = proxy_api.get_transfer(&chain, &ids).await?;
-            if cli.json {
-                println!("{}", serde_json::to_string_pretty(&result)?);
-            } else {
-                for transfer in result {
-                    println!(
-                        "{} | {:?} | {} -> {}",
-                        transfer.transfer_id, transfer.status, transfer.from, transfer.to
-                    );
-                }
-            }
-        }
-        // ============================================================
-        // Data WSS Commands
-        // ============================================================
-        Commands::WssRepl => {
-            ws::run_repl(&config).await?;
-        }
-        Commands::WatchPrice { tokens } => {
-            ws::watch_price(&config, tokens).await?;
-        }
-        Commands::WatchKline {
-            address,
-            chain,
-            interval,
-            format,
-        } => {
-            let format_markdown = format.as_deref() == Some("markdown");
-            ws::watch_kline(&config, &address, &chain, &interval, format_markdown).await?;
-        }
-        Commands::WatchTx {
-            address,
-            chain,
-            topic,
-        } => {
-            ws::watch_tx(&config, &address, &chain, &topic).await?;
         }
     }
 

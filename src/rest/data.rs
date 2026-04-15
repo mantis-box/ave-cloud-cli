@@ -175,10 +175,10 @@ impl<'a> DataApiV2<'a> {
         r: Option<u32>,
         m: Option<u32>,
     ) -> Result<KlineResponse, ZeroClawError> {
-        let path = format!("/klines/token/{}-{}", address, chain);
+        let path = format!("/klines/token/{}-{}", address.to_lowercase(), chain.to_lowercase());
         let mut params: Vec<(String, String)> = vec![
             ("interval".to_string(), interval.to_string()),
-            ("size".to_string(), size.to_string()),
+            ("limit".to_string(), size.to_string()),
         ];
         if let Some(v) = u {
             params.push(("u".to_string(), v.to_string()));
@@ -204,10 +204,10 @@ impl<'a> DataApiV2<'a> {
         r: Option<u32>,
         m: Option<u32>,
     ) -> Result<KlineResponse, ZeroClawError> {
-        let path = format!("/klines/pair/{}-{}", address, chain);
+        let path = format!("/klines/pair/{}-{}", address.to_lowercase(), chain.to_lowercase());
         let mut params: Vec<(String, String)> = vec![
             ("interval".to_string(), interval.to_string()),
-            ("size".to_string(), size.to_string()),
+            ("limit".to_string(), size.to_string()),
         ];
         if let Some(v) = u {
             params.push(("u".to_string(), v.to_string()));
@@ -232,7 +232,7 @@ impl<'a> DataApiV2<'a> {
     ) -> Result<KlineResponse, ZeroClawError> {
         let mut params: Vec<(String, String)> = vec![
             ("interval".to_string(), interval.to_string()),
-            ("size".to_string(), size.to_string()),
+            ("limit".to_string(), size.to_string()),
         ];
         if let Some(t) = from_time {
             params.push(("from_time".to_string(), t.to_string()));
