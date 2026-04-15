@@ -1,13 +1,14 @@
 # ave-cloud-cli
 
-Rust-based CLI for Ave Cloud API that replicates server-side functionality including REST API queries, WebSocket streams, and DEX trading.
+Hyper-optimized, statically linked Rust binary (~5MB) for Ave Cloud API — REST queries, WebSocket streams, and DEX trading. Cross-compiled for `x86_64`, `aarch64`, and `armv7` (Raspberry Pi).
 
 ## Features
 
-- **REST API**: Token prices, kline data, holders, risk scores, swap transactions
+- **REST API**: Token prices, kline data, holders, risk scores, trending, smart wallets, swap transactions
 - **WebSocket**: Real-time price/tx/kline streams, order status push
-- **Trade**: Chain wallet (self-custody EVM) + proxy wallet (server-managed)
+- **Trade**: Chain wallet (self-custody EVM + k256 signing) + proxy wallet (server-managed)
 - **Cross-platform**: x86_64, aarch64, armv7 (Raspberry Pi)
+- **Dependencies**: tokio, reqwest, tokio-tungstenite, k256, clap, zeroize
 
 ## Installation
 
@@ -68,16 +69,22 @@ ave-cloud-cli search "pepe" --chain BSC
 ### Data REST (Free+)
 ```
 ave-cloud-cli price <chain> <address>     Token price
-ave-cloud-cli info <chain> <address>      Full token info
+ave-cloud-cli info <chain> <address>      Full token info (holders, market cap, supply)
 ave-cloud-cli kline <chain> <address>     OHLCV data
 ave-cloud-cli risk <chain> <address>       Risk/honeypot check
 ave-cloud-cli search <query>             Token search
+ave-cloud-cli trending <chain>           Trending tokens (bsc/solana)
+ave-cloud-cli ranks --topic <hot|gainer|loser|meme>  Token rankings
+ave-cloud-cli signals --chain <chain>     Trading signals (solana)
+ave-cloud-cli smart-wallets --chain <chain> --keyword <query>  Whale activity
 ```
 
 ### Data WebSocket (Pro)
 ```
 ave-cloud-cli stream price <chain> <addr>  Real-time prices
 ave-cloud-cli stream tx <chain> <addr>     Real-time transactions
+ave-cloud-cli stream kline <chain> <addr>  Real-time OHLCV kline updates
+ave-cloud-cli wss-repl                     Interactive WSS read-eval-print loop
 ave-cloud-cli daemon --skill data-wss     Background daemon
 ```
 
